@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   if (!subject || !ADDRESS_RE.test(subject)) {
     return json({ error: "missing or invalid ?subject" }, 400);
   }
-  return json({ reports: getReportsFor(subject as Address) });
+  return json({ reports: await getReportsFor(subject as Address) });
 }
 
 /**
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     return json({ error: validationError, message: buildReportMessage(input) }, 400);
   }
 
-  if (countReportsByReporterToday(input.reporter) >= MAX_REPORTS_PER_REPORTER_PER_DAY) {
+  if ((await countReportsByReporterToday(input.reporter)) >= MAX_REPORTS_PER_REPORTER_PER_DAY) {
     return json({ error: "rate_limited", detail: `max ${MAX_REPORTS_PER_REPORTER_PER_DAY} reports/day per reporter` }, 429);
   }
 
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     return json({ error: "invalid_signature", message: buildReportMessage(input) }, 401);
   }
 
-  addReport({
+  await addReport({
     id: crypto.randomUUID(),
     ...input,
     signature: signature as `0x${string}`,

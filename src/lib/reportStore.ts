@@ -12,19 +12,18 @@
  * design are proven, migrating to a contract is the natural next step, not a
  * surprise pivot.
  *
- * Storage mechanism: one JSON file, same pattern as `cache.ts`. This is fine for
- * local dev and a single long-running instance; it is **not** durable against a
- * serverless redeploy or shared across instances — a real database is required
- * before this takes real traffic. Flagged here exactly like `cache.ts`'s and
- * ProofGraph's x402 free-tier bucket's own caveats — not a new kind of shortcut.
+ * Storage mechanism: Upstash Redis (the "Vercel KV" product — Vercel migrated KV
+ * to an Upstash-backed Marketplace integration, `@vercel/kv` is deprecated in
+ * favor of `@upstash/redis` directly against the same `KV_REST_API_URL`/
+ * `KV_REST_API_TOKEN` env vars). Replaces an earlier single-JSON-file version
+ * (fine for local dev, not durable across a serverless redeploy or shared across
+ * instances) now that this is headed toward a real deploy.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { Redis } from "@upstash/redis";
 import type { Address } from "viem";
 import type { ReportCategory } from "./evidence";
 
-const DATA_DIR = join(process.cwd(), ".data");
-const REPORTS_FILE = join(DATA_DIR, "reports.json");
+const redis = Redis.fromEnv();
 
 export type StoredReport = {
   id: string;
@@ -38,43 +37,30 @@ export type StoredReport = {
   receivedAt: number; // when this server accepted it
 };
 
-function readAll(): StoredReport[] {
-  try {
-    return JSON.parse(readFileSync(REPORTS_FILE, "utf8")) as StoredReport[];
-  } catch {
-    return [];
-  }
+const reportsKey = (subject: string) => `arcvet:reports:${subject.toLowerCase()}`;
+
+// Scoped to a UTC calendar day: countReportsByReporterToday only ever reads
+// today's key, so a fixed 48h expiry (comfortably past the next UTC rollover)
+// is enough cleanup without needing exact midnight math.
+const DAILY_COUNT_TTL_SECONDS = 60 * 60 * 48;
+const dailyCountKey = (reporter: string) =>
+  `arcvet:reports:count:${reporter.toLowerCase()}:${new Date().toISOString().slice(0, 10)}`;
+
+export async function addReport(report: StoredReport): Promise<void> {
+  await redis.rpush(reportsKey(report.subject), report);
+  const countKey = dailyCountKey(report.reporter);
+  await redis.incr(countKey);
+  await redis.expire(countKey, DAILY_COUNT_TTL_SECONDS);
 }
 
-function writeAll(reports: StoredReport[]): void {
-  try {
-    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(REPORTS_FILE, JSON.stringify(reports, null, 2), "utf8");
-  } catch {
-    // best-effort — a read-only filesystem means reports silently don't persist,
-    // not a hard failure (same tradeoff as cache.ts)
-  }
+export async function getReportsFor(subject: Address): Promise<StoredReport[]> {
+  const reports = await redis.lrange<StoredReport>(reportsKey(subject), 0, -1);
+  return reports.sort((a, b) => b.receivedAt - a.receivedAt);
 }
 
-export function addReport(report: StoredReport): void {
-  const all = readAll();
-  all.push(report);
-  writeAll(all);
-}
-
-export function getReportsFor(subject: Address): StoredReport[] {
-  const s = subject.toLowerCase();
-  return readAll()
-    .filter((r) => r.subject.toLowerCase() === s)
-    .sort((a, b) => b.receivedAt - a.receivedAt);
-}
-
-export function countReportsByReporterToday(reporter: Address): number {
-  const r = reporter.toLowerCase();
-  const startOfDay = new Date();
-  startOfDay.setUTCHours(0, 0, 0, 0);
-  const cutoff = startOfDay.getTime();
-  return readAll().filter((x) => x.reporter.toLowerCase() === r && x.receivedAt >= cutoff).length;
+export async function countReportsByReporterToday(reporter: Address): Promise<number> {
+  const count = await redis.get<number>(dailyCountKey(reporter));
+  return count ?? 0;
 }
 
 export const MAX_REPORTS_PER_REPORTER_PER_DAY = 5;

@@ -14,10 +14,6 @@ build/
 # local disk cache (see src/lib/cache.ts)
 .cache/
 
-# local community-report store (see src/lib/reportStore.ts) - real data, not
-# committed; needs a real DB before real traffic (same caveat as .cache/)
-.data/
-
 # misc
 .DS_Store
 *.log
@@ -26,3 +22,10 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.vercel
+.env*
+
+# AI coding-assistant reference docs pulled by `vercel integration add` — not app code
+.agents/
+.claude/skills/
+skills-lock.json

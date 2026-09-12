@@ -644,3 +644,42 @@ for the 2-hop chain) was not yet balance-checked before this was written up.
 **Decision: paused, not shipped.** Did not write a `liquidityHealth` term against
 an unreliable address-detection method. Reported findings to the user rather than
 continuing to guess at more launchpads' router shapes unprompted.
+
+## 13. Repo goes public(-ish) — GitHub + Vercel + a real report store
+
+Liquidity work paused, moved to getting Phase 2 deployable. Three steps:
+
+1. **`github.com/bars26/arcvet`** (private) — the repo had never been pushed
+   anywhere before this; `gh repo create --source=. --push` with all 7 local
+   commits intact.
+2. **Linked to Vercel** (`vercel link`) as `bars26s-projects/arcvet`, connected to
+   the GitHub repo for auto-deploy-on-push.
+3. **`reportStore.ts` moved off the JSON file onto Upstash Redis** ("Vercel KV" —
+   `@vercel/kv` itself is deprecated in favor of `@upstash/redis` directly against
+   the same `KV_REST_API_URL`/`KV_REST_API_TOKEN` env vars; installed the
+   deprecated package first, npm's install-time warning caught it before any code
+   was written against it, swapped immediately). Provisioned via
+   `vercel integration add upstash/upstash-kv` — required accepting Vercel
+   Marketplace terms in-browser first (asked the user rather than accepting on
+   their behalf). `Redis.fromEnv()` falls back to Vercel's `KV_REST_API_*` naming
+   automatically, so no env-var renaming was needed.
+
+   All three `reportStore.ts` functions became `async` (network I/O now, not
+   `fs`); `api/reports/route.ts` updated to `await` them. Reports are stored as a
+   Redis list per subject (`RPUSH`/`LRANGE`); the daily rate-limit is a counter
+   keyed by `reporter + UTC date` with a 48h expiry — incidentally *more* correct
+   than the file version, which only ever approximated a global limit per
+   instance, since a single shared Redis counter is a real cross-instance limit.
+
+   Re-ran the full `scripts/test-report.ts` E2E suite (valid submit + readback,
+   tampered signature → 401, impersonation → 401) and a 6th-report/day check
+   (→ 429) against the live Redis-backed dev server — all still pass unchanged.
+   Also caught, before it mattered: dev/preview/production all share **one**
+   Upstash instance (confirmed via `vercel env ls`), so the test/rate-limit junk
+   these checks wrote had to be deleted from Redis directly afterward — it would
+   otherwise have shipped to production as the first "community reports" anyone
+   saw.
+
+Not yet done: the actual `vercel deploy` to production, and env vars for the
+read layer (none needed today — `arc.ts` calls are all unauthenticated public
+endpoints — but worth re-checking before going live).

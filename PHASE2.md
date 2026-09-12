@@ -45,12 +45,17 @@ specifically what automatic, on-chain-only signals structurally cannot see:
 ProofGraph went straight to a contract because it deployed to *testnet* play-money.
 Arc chain 5042 is real — a wrong schema or a bug in our own registry contract would
 be a real, permanent cost. Phase 2 starts the same way ProofGraph itself did
-(V1 simple, V2 structured on-chain once proven) — a plain JSON file
-(`src/lib/reportStore.ts`, same disk pattern as Phase 1's `cache.ts`, but durable
-data rather than an expiring cache). Explicitly **not production-grade**: fine for
-local dev and a single instance, not shared across serverless instances or durable
-across a redeploy — a real database is the next step once real traffic shows up,
-not a surprise migration.
+(V1 simple, V2 structured on-chain once proven) — off-chain first, a contract is
+the natural next step once the report shape and a real anti-sybil design are
+proven, not a surprise pivot.
+
+Storage started as a plain JSON file (same disk pattern as Phase 1's `cache.ts`,
+but durable data rather than an expiring cache) — fine for local dev, not durable
+across a serverless redeploy or shared across instances. Migrated to Upstash Redis
+(the "Vercel KV" product — `src/lib/reportStore.ts`, `@upstash/redis`) ahead of the
+first real deploy; same schema, same rate-limit semantics, now backed by one shared
+instance across dev/preview/production. A stake/bond anti-sybil model (below)
+remains the next real step, not this one.
 
 ## Anti-sybil, v1: a signature, not a stake
 
@@ -67,9 +72,9 @@ is a floor, not a ceiling:
   name to the claim — cheap sybil (many fresh wallets) is still possible, but
   free-form anonymous spam isn't.
 - **Rate-limited**: 5 reports/reporter/day (`reportStore.ts`,
-  `MAX_REPORTS_PER_REPORTER_PER_DAY`), in-memory-equivalent (file-read count),
-  same honest caveat as ProofGraph's x402 free-tier bucket — per-instance, not a
-  hard global guarantee.
+  `MAX_REPORTS_PER_REPORTER_PER_DAY`), a Redis counter keyed by reporter + UTC
+  date — a real global limit now (shared across all serverless instances), not
+  the per-instance approximation the file-based version gave.
 - **A stake/bond model** (put up USDC, lose it if the report is later disputed as
   false) is a real candidate for v2 of this layer, once report volume shows
   whether pure signature + rate-limit is actually being abused. Not built now —
