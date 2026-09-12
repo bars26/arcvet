@@ -337,3 +337,100 @@ launchpad using its own factory pattern (or a *bespoke* factory not in
 before this fix — there's no generic factory-detection here, just a growable
 allowlist. Worth widening once a second real launchpad is checked by hand the same
 way this one was.
+
+## 9. MAJOR — Arc is two chains, and most of the real activity is on the one ArcVet doesn't read
+
+Went looking for Warp's factory address (`LAUNCHPADS.md`) and found something bigger:
+**everything this repo has verified so far — RABBIT, CATTY, ARCAT, the whole SPEC.md
+formula — is real, but it's real on Arc *Testnet* (chain 5042002). A second, separate
+chain, plainly called just "Arc" (chain **5042**), is already live, and it's where
+Warp (243 tokens, $1.96M volume) and TollyLabs' tokens actually are** — a token
+address grabbed straight from each platform's own site (Warp's `WARP`, Tolly's
+`Argus`) is an **empty EOA with zero transactions on testnet** and a **real,
+bytecode-bearing contract on chain 5042**.
+
+### How this was found, in order (each step free — no arcscan budget spent)
+
+1. Warp's homepage JS bundle (`circlewarp.fun`) references
+   `arc-mainnet.cloud.blockscout.com` and its own RPC proxy,
+   `https://warp-arc-production.up.railway.app/rpc`.
+2. That proxy answers `eth_chainId → 0x13b2` (**5042**, decimal) and a real,
+   advancing `eth_blockNumber` (20M+). `eth_getCode` on the "empty EOA" WARP address
+   returns real `CurveToken` bytecode there (1e9 hardcoded supply, `CurveToken:`
+   revert strings — an exact match for the `ArcFactory.sol` source Warp's own page
+   displays).
+3. Found the real, independent explorer for it: **`arc-scan.org`** (Cloudflare
+   bot-check in front — needs a real browser, `curl` gets a JS challenge page).
+   Its `/llms.txt` (a machine-readable doc file, apparently written specifically for
+   agents) states outright:
+
+   > *"The Arc network is two chains, and Arcscan is two deployments built from one
+   > source tree. The production chain is Arc, chain ID 5042; the test chain is Arc
+   > Testnet, chain ID 5042002. Everything under https://arc-scan.org is chain 5042
+   > and nothing else… The other chain is served by a separate Arcscan deployment on
+   > its own hostname."*
+
+   `api.arc-scan.org/v1/chain` confirms it live: `"chain_id": 5042, "name": "Arc",
+   "is_testnet": false, "mainnet_soon": false`. `erc20_native` is the same address
+   pattern as testnet's USDC view (`0x3600…0000`, 6 decimals) — the two chains share
+   that convention.
+4. Confirmed genesis-to-now history: **live since at least 2026-08-29** (14 complete
+   days of tx history shown on the homepage at the time of checking), ~100K
+   tx/day, 506ms blocks, 1.37M+ total transactions — this is not a demo or a
+   just-switched-on network. "Mainnet Summer 2026" / "Sept 16" messaging elsewhere
+   (`pad.chaingpt.org`, community framing) is best read as the *public launch/
+   announcement* date, not the chain's actual genesis.
+5. Resolved Warp's real factory address the proper way, using `arc-scan.org`'s own
+   API rather than guessing: `GET /v1/address/{WARP_token}/facts` → first-activity
+   tx hash → `GET /v1/txs/{hash}` → `to` field. Full write-up in `LAUNCHPADS.md`.
+
+### `arc-scan.org` / `api.arc-scan.org` — what it offers, for when Phase 2 needs it
+
+Worth recording in detail; this is a materially better toolkit than testnet's arcscan
+for everything ArcVet's read layer struggled with:
+
+- **JSON-RPC**: `POST https://rpc.arc-scan.org` — no key, CORS-open, ≤50 calls/batch,
+  ≤131072 bytes/body. Refuses `trace_*`/`debug_*` (cost policy) and signing methods
+  (holds no keys) with a structured JSON-RPC error naming the reason — not silence.
+- **REST API base**: `https://api.arc-scan.org` (`/v1/...`), CORS-open for
+  GET/HEAD/OPTIONS. Relevant routes ArcVet doesn't have equivalents for today:
+  `/v1/tokens/{addr}/holders` and Etherscan-shape `token.tokenholderlist` — **a real
+  holder list**, not reconstructed from raw transfers (`holder_index: true` in
+  `/v1/chain`'s capabilities). `/v1/address/{addr}/facts` — first/last activity,
+  funding source. `/v1/txs/{hash}/trace` — per-transaction internal call frames
+  (works, unlike an address-wide internal-tx scan, which this deployment explicitly
+  refuses — its own traces index holds no blocks for that query shape).
+- **Etherscan-shape**: `https://api.arc-scan.org/api?module=…&action=…` — the doc
+  says explicitly *"moving existing Etherscan code: change the base URL, keep
+  sending `apikey`… nothing else changes"* — this repo's `arcscan()` helper
+  (`arc.ts`) could plausibly point here almost unchanged for a chain-5042 client.
+  Notable differences from testnet's arcscan: `contract.getcontractcreation` is
+  **refused** here (no otterscan namespace on this node) — creation info comes from
+  the address/contract or address/facts+tx route instead, the way Warp's factory
+  was actually found above.
+- **Rate limit: a burst of 300 requests, refilling at 60/second**, keyed per calling
+  IP. Compare to testnet's arcscan: **10 requests per ~hour-ish window** (DECISIONS.md
+  §5). This alone would remove most of the caching/throttling machinery this repo
+  had to build (`cache.ts`, backoff loops in `arc.ts`) if ArcVet read chain 5042
+  instead of/in addition to testnet.
+- **Requires a descriptive `User-Agent`** — the edge 403s several default HTTP-client
+  UAs (e.g. bare `Python-urllib`) before the request even reaches the service.
+- **No contract verification on this chain yet** ("our verification provider does
+  not cover chain 5042 today") — `getabi`/`getsourcecode` return empty/NOTOK
+  regardless of what the deploying team may have published elsewhere (e.g. Warp's
+  own page shows source, but arcscan itself doesn't have it) — bytecode is always
+  served regardless of verification status.
+- Also present: a public **MCP server** at `POST https://api.arc-scan.org/mcp`
+  (8 tools: chain status, block, tx, address, address-txs, token, token-holders,
+  search) and an SSE block stream at `/v1/stream/head`.
+
+### Open scope question for Phase 2 — not resolved here
+
+ArcVet's entire chain config (`arc.ts`) points at testnet only. Given most of what's
+actually active and interesting (Warp, TollyLabs, presumably arcpad.meme/minara.fun/
+radardex.pro too — untested but the same "empty on testnet" pattern is likely) lives
+on chain 5042, **the real decision for Phase 2 is whether ArcVet should read chain
+5042 as a first-class target**, not just whether Warp's factory address is in a
+list. Warp's factory is registered in `KNOWN_LAUNCH_FACTORIES` with `chainId: 5042`
+and is explicitly inert (§8) until that decision is made and a chain-5042 read path
+exists to use it.

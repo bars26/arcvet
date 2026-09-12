@@ -197,8 +197,15 @@ export type CreatedContract = { contractAddress?: Address; timestamp: number };
  * *call* to the factory (`to` = factory, `contractAddress` empty), never a direct
  * `CREATE` from the creator's own address. Add more factories here as they're found.
  */
-const KNOWN_LAUNCH_FACTORIES: Array<{ name: string; address: Address; createMethodId: string }> = [
-  { name: "lolpad", address: "0xabE2dA9AB9F94F2Cf3B74B463E115E275e5007D5", createMethodId: "0x054b880d" },
+const KNOWN_LAUNCH_FACTORIES: Array<{ name: string; address: Address; createMethodId: string; chainId: number }> = [
+  { name: "lolpad", address: "0xabE2dA9AB9F94F2Cf3B74B463E115E275e5007D5", createMethodId: "0x054b880d", chainId: ARC_TESTNET_CHAIN_ID },
+  // Warp (circlewarp.fun) — Arc's ArcFactory.sol, source published on the site.
+  // createToken(string name, string symbol, string metadataURI, uint256 minTokensOut).
+  // Confirmed by hand (LAUNCHPADS.md): the WARP token's own first transaction calls
+  // this address with selector 0xefbe8fd1 and ABI-encoded ("WARP","WARP",<ipfs uri>).
+  // On **chain 5042 — Arc mainnet**, not this file's testnet (5042002). Registered
+  // for the record; inert until the read layer supports a second chain (see below).
+  { name: "warp", address: "0x0dCad158e98bC24455f9e94F46709d8a5F6D1255", createMethodId: "0xefbe8fd1", chainId: 5042 },
 ];
 
 /**
@@ -239,8 +246,16 @@ export async function getCreatedContracts(deployer: Address): Promise<CreatedCon
         out.push({ contractAddress: r.contractAddress as Address, timestamp: Number(r.timeStamp) });
         continue;
       }
+      // Scoped to this file's chain (testnet, today): a factory registered for a
+      // different chainId (e.g. Warp on mainnet 5042) must never match testnet
+      // txlist rows just because addresses collide in theory — it's inert here by
+      // design until a second chain is actually wired up (LAUNCHPADS.md).
       const factory = KNOWN_LAUNCH_FACTORIES.find(
-        (f) => r.to && eqAddr(r.to, f.address) && r.input?.startsWith(f.createMethodId),
+        (f) =>
+          f.chainId === ARC_TESTNET_CHAIN_ID &&
+          r.to &&
+          eqAddr(r.to, f.address) &&
+          r.input?.startsWith(f.createMethodId),
       );
       if (factory) out.push({ timestamp: Number(r.timeStamp) });
     }
