@@ -254,15 +254,36 @@ several days old by Arc's block rate) — a token checked within its first hours
 day of life, Phase 1's actual target, spans a tiny fraction of that and should
 resolve in a few seconds.
 
+## 7. UI + API shipped, validated live end-to-end (2026-09-12)
+
+`src/app/api/check/route.ts` (`GET /api/check?address=0x…`) and `src/app/page.tsx`
+(paste-an-address UI, three real lolpad presets, term bars + reasons, matching
+ProofGraph's `/v2` polish level). Ran a real check through the actual UI against
+RABBIT: **score 36, confidence medium, age 61.0h, 25 transfers, top EOA 63.0%** —
+consistent with §4/§6's manually-verified numbers (the 18.98% early-accumulation
+reason line matches exactly). `deployerLaunchVelocity` came back "0 prior launches"
+live, rather than the "1" assumed by hand in §4/§8 — real data, more accurate than
+the guess (CATTY may have been created outside the 7-day-before-RABBIT window, or
+missed by the capped `txlist` pagination — not confirmed either way).
+
+One open, unconfirmed discrepancy: this live run reported the contract **verified**,
+where the direct §3/§4 check found it unverified. Not chased further given the tight
+arcscan budget — plausible explanation is Blockscout auto-verifying a byte-identical
+clone once a sibling lolpad-template contract got verified elsewhere, but that's a
+guess, not a confirmed mechanism.
+
 **Net effect on the arcscan-only blocker in §5:** the only calls that still have no
 RPC equivalent are `getcontractcreation` (who deployed it + when — 1 call) and the
 deployer's created-contracts lookup (`account/txlist`, paginated — typically 1 call
 for a low-activity deployer) and `getsourcecode` (verification — 1 call). **A full
-`getTokenSignals` run now costs ~3 arcscan calls instead of ~5-8.** That's a real
-improvement but does not remove the constraint: the anonymous limit is still 10
-requests per ~21h window, so even at 3/check that's only ~3 checks per window with
-no API key. §5's options (a)/(c) — an API key, or caching so a given token/deployer
-is only ever looked up once — still stand for anything beyond occasional manual
-testing. The budget is at 0 as of this session and won't reset for ~21h from
-2026-09-12 ~08:00 UTC, so `scripts/check-token.ts` (which needs all three) can't
-complete a fresh run until then regardless of how efficient the RPC side is.
+`getTokenSignals` run now costs ~3 arcscan calls instead of ~5-8**, all of which are
+now disk-cached (`cache.ts`) so a given token/deployer only ever costs that once.
+
+**Correction to §5's "~21h reset":** that reading of `x-ratelimit-reset` doesn't hold
+up empirically. Within roughly an hour of hitting 0/10, a live end-to-end run through
+`/api/check` (§7) succeeded, and a follow-up header check showed **7/10 remaining**
+with a very different (much larger) reset value than the first reading. The exact
+reset semantics of this endpoint aren't fully understood — don't plan around a
+21-hour lockout as a hard fact, but also don't assume the limit is generous: it's
+real, it's tight, and it's better protected against by the cache than by waiting out
+any particular number.
