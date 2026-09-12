@@ -14,7 +14,9 @@ evidence submission — works from block zero for any address. A community-evide
 layer (ProofGraph-style: outcome + verifier + hash) is a candidate Phase 2, once the
 automatic signal is proven useful.
 
-See `DECISIONS.md` for scope, open questions, and Day-1 findings.
+See `DECISIONS.md` for scope, open questions, and Day-1 findings; `SPEC.md` for the
+frozen scoring formula; `LAUNCHPADS.md` for recon on Arc's live launchpads (which
+ones are real, which factory patterns they use) ahead of widening Phase 2.
 
 ## Development
 
