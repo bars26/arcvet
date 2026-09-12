@@ -287,3 +287,53 @@ reset semantics of this endpoint aren't fully understood — don't plan around a
 21-hour lockout as a hard fact, but also don't assume the limit is generous: it's
 real, it's tight, and it's better protected against by the cache than by waiting out
 any particular number.
+
+## 8. Bug found + fixed — `deployerLaunchVelocity` was structurally blind to lolpad-style launches
+
+User asked, correctly suspicious: why did CATTY (created by RABBIT's same deployer,
+~18h later) not count as a "prior launch" for RABBIT? Root-caused with two arcscan
+calls, both worth their cost:
+
+RABBIT's own top-level launch transaction (block 61279903) has
+`to: 0xabE2dA9…` (a real address, lolpad's factory contract) and empty
+`contractAddress` — **it is a plain contract *call*** (`methodId 0x054b880d`,
+presumably `createToken`-shaped), not a direct `CREATE` from the creator's EOA.
+Confirmed via the factory's own internal transactions
+(`account/txlistinternal`) at that block:
+
+```
+type: create2   contractAddress: 0xbd2297…a325  (= RABBIT itself)
+type: create2   contractAddress: 0x977fbb…437e  (= its bonding-curve pool)
+```
+
+Both are **internal** operations of the factory, invisible to `account/txlist` for
+the *creator's* address no matter how far back it's paged — `getCreatedContracts`
+was looking for the wrong shape of transaction entirely for this launch pattern.
+Checked the creator's second factory call (block 61398600, ~17.7h later) the same
+way — its `create2` output, `0xb57e7273…6e4e8`, is **exactly CATTY's address**,
+confirming the same deployer really did launch both, and confirming the bug: no
+amount of pagination would ever have found either one.
+
+**Fix (`arc.ts`):** `getCreatedContracts` now also matches a creator's plain calls to
+a small `KNOWN_LAUNCH_FACTORIES` registry (currently just lolpad's factory +
+its create-method selector) as launch events, alongside the original direct-creation
+check (still needed for bespoke, non-factory contracts like Knidos). A
+factory-detected hit has no cheaply-resolvable `contractAddress` (that needs a
+per-hit internal-tx lookup we don't want to spend on every candidate), so
+`CreatedContract.contractAddress` is now optional, and `tokenSignals.ts` excludes
+"this token's own launch" by **matching timestamp** instead of address (the mint
+event's timestamp is exactly the launch tx's block timestamp either way).
+
+**Verified live, both directions, after the fix:**
+- CATTY: `deployerPriorLaunches7d = 1` (correctly counts RABBIT, which came first) →
+  reason line "Deployer launched 1 other token(s) in the 7 days around this one",
+  **score 53**.
+- RABBIT: still `deployerPriorLaunches7d = 0` (correctly excludes CATTY, which came
+  *after* RABBIT — not "prior") — **score unchanged at 36**.
+
+**Known remaining limitation:** only lolpad's factory is registered. A different
+launchpad using its own factory pattern (or a *bespoke* factory not in
+`KNOWN_LAUNCH_FACTORIES`) would silently under-count the same way RABBIT/CATTY did
+before this fix — there's no generic factory-detection here, just a growable
+allowlist. Worth widening once a second real launchpad is checked by hand the same
+way this one was.

@@ -188,14 +188,34 @@ async function fetchAllTransfers(tokenAddress: Address, sinceBlock: bigint): Pro
 
 // --- deployer history -----------------------------------------------------------------
 
-export type CreatedContract = { contractAddress: Address; timestamp: number };
+export type CreatedContract = { contractAddress?: Address; timestamp: number };
+
+/**
+ * Launchpad factories whose "create a token" call we recognise. Confirmed by hand
+ * (DECISIONS.md §8): lolpad's factory deploys the token AND its bonding-curve pool
+ * via two internal `create2`s per call — the top-level tx a creator sends is a plain
+ * *call* to the factory (`to` = factory, `contractAddress` empty), never a direct
+ * `CREATE` from the creator's own address. Add more factories here as they're found.
+ */
+const KNOWN_LAUNCH_FACTORIES: Array<{ name: string; address: Address; createMethodId: string }> = [
+  { name: "lolpad", address: "0xabE2dA9AB9F94F2Cf3B74B463E115E275e5007D5", createMethodId: "0x054b880d" },
+];
 
 /**
  * Contracts a deployer has created, chronological. No dedicated "list contracts by
  * creator" endpoint exists (DECISIONS.md §3 item 1) — paginates account/txlist and
- * keeps entries with a `contractAddress` (a creation tx has no `to` at all). Capped
- * at 3 pages (~300 most recent txs) — enough for the launch-velocity window this
- * feeds (7 days), not a full-lifetime archive for a very active address.
+ * keeps two kinds of hits: (a) a direct top-level creation (`contractAddress`
+ * present — a bespoke contract deployed straight from the EOA, e.g. Knidos-style),
+ * and (b) a call to a known launchpad factory's create method (DECISIONS.md §8 —
+ * this is the *only* way to see a lolpad-style launch at all; the actual `CREATE2`
+ * is an internal tx of the factory, invisible in this address's own txlist no
+ * matter how far back it's paged). (b) entries have no resolvable `contractAddress`
+ * without an extra per-hit lookup, so `contractAddress` is optional — callers that
+ * need to exclude "this token's own launch" from the list should match by
+ * timestamp, not address (see tokenSignals.ts).
+ *
+ * Capped at 3 pages (~300 most recent txs) — enough for the launch-velocity window
+ * this feeds (7 days), not a full-lifetime archive for a very active address.
  */
 export async function getCreatedContracts(deployer: Address): Promise<CreatedContract[]> {
   const cached = cacheGet<CreatedContract[]>("created-contracts", deployer);
@@ -204,7 +224,7 @@ export async function getCreatedContracts(deployer: Address): Promise<CreatedCon
   const out: CreatedContract[] = [];
   for (let page = 1; page <= 3; page++) {
     const rows = await arcscan<
-      Array<{ contractAddress?: string; timeStamp: string }>
+      Array<{ to?: string; contractAddress?: string; input?: string; timeStamp: string }>
     >({
       module: "account",
       action: "txlist",
@@ -217,16 +237,23 @@ export async function getCreatedContracts(deployer: Address): Promise<CreatedCon
     for (const r of rows) {
       if (r.contractAddress) {
         out.push({ contractAddress: r.contractAddress as Address, timestamp: Number(r.timeStamp) });
+        continue;
       }
+      const factory = KNOWN_LAUNCH_FACTORIES.find(
+        (f) => r.to && eqAddr(r.to, f.address) && r.input?.startsWith(f.createMethodId),
+      );
+      if (factory) out.push({ timestamp: Number(r.timeStamp) });
     }
     if (rows.length < 100) break;
   }
   // moderate TTL: this list can only grow (a deployer might launch again), and it
   // feeds a 7-day rolling window, so an hour of staleness is an acceptable trade
-  // against arcscan's ~21h lockout on a fresh miss.
+  // against arcscan's tight anonymous rate limit on a fresh miss.
   cacheSet("created-contracts", deployer, out, TTL.HOUR);
   return out;
 }
+
+const eqAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // --- verification + generic selector probing -------------------------------------------
 

@@ -82,11 +82,14 @@ export async function getTokenSignals(tokenAddress: Address): Promise<TokenSigna
   const topEoaHolder = await findTopEoaHolder(balances, tokenAddress);
 
   const created = await getCreatedContracts(creation.contractCreator);
+  // Excluded by timestamp, not address: a lolpad-style (or other known-factory)
+  // launch has no resolvable contractAddress in this list (DECISIONS.md §8) — the
+  // mint event's timestamp equals the launch tx's block timestamp exactly, so
+  // `< mintTimestamp` already drops the token's own launch without needing its
+  // address. (Two launches from the same deployer landing in the identical second
+  // would also both be excluded — an acceptable Phase 1 edge case.)
   const deployerPriorLaunches7d = created.filter(
-    (c) =>
-      !eq(c.contractAddress, tokenAddress) &&
-      c.timestamp < mintTimestamp &&
-      c.timestamp >= mintTimestamp - DEPLOYER_LOOKBACK_SECONDS,
+    (c) => c.timestamp < mintTimestamp && c.timestamp >= mintTimestamp - DEPLOYER_LOOKBACK_SECONDS,
   ).length;
 
   return {
