@@ -153,12 +153,17 @@ Uniswap V3/V4** launch model is a plausible match for that router shape):
   Uniswap V3 launches, permanently locked LP"** — a mechanism detail worth
   checking against arcpad's other tokens beyond the one sample (`$ARCHIE`) we have.
 - `@minarafun` — already confirmed above as live.
-- `@ArcadeSwap` — **"supports both bonding-curve and direct Uniswap V4
-  launches"** — a plausible source for BARC/sharc_attac's multi-hop router
-  pattern, not yet checked.
-- `@PUMP_archi` — **"direct Uniswap V4 token launches"** — another plausible
-  candidate for the same reason.
-- `@arcfunxyz` — bonding-curve, ~$25K graduation (vs. Warp's $69K).
+- `@ArcadeSwap` — **checked, ruled out.** Site is `arcade.trading` (found via the
+  X profile's bio link). Its `/launchpad` page reads **"No tokens yet. Launch the
+  first one →"** — zero tokens have ever launched through it. Can't be the
+  platform behind BARC/sharc_attac, which are already days-old with real trading
+  history.
+- `@PUMP_archi` — **could not locate.** The handle 404s on X directly; several
+  spelling variants (`archipump`, `pump_archive`, `pump.archi`) turned up nothing
+  matching "direct Uniswap V4 launches on Arc" either as an X account or a
+  website. Likely either mistyped in the source post, renamed, or not yet public.
+  Not resolved — dropped as a lead rather than guessed at further.
+- `@arcfunxyz` — bonding-curve, ~$25K graduation (vs. Warp's $69K). Not checked.
 - `@actfunxyz`, `@Arguspad` (note: a *different* project from "Argus" the
   Tolly-launched token already in our reference set — same name, unrelated),
   `@onmidotfun`, `@Fliptfun` — not investigated.
@@ -171,10 +176,11 @@ ArcVet's scope ever grows past "token launch trust" (e.g. `@catena_labs` and
 angle discussed alongside ArcVet before Phase 1 was chosen; full list not
 reproduced here — ask if this needs expanding into its own section later).
 
-**Next step if picked up**: check `eth_getCode`/bytecode + first-launch tx for
-one token each from `@ArcadeSwap`, `@PUMP_archi`, and `@arcfunxyz` against
-BARC/sharc_attac's known factory-hop addresses
-(`0x0000ffffbe8efe702c8703ae3477ff5de3d319c0`,
+**Still open**: check `eth_getCode`/bytecode + first-launch tx for a token from
+`@arcfunxyz` (not yet attempted) against BARC/sharc_attac's known factory-hop
+addresses (`0x0000ffffbe8efe702c8703ae3477ff5de3d319c0`,
 `0x6049c9a0e26405c0985f9e3685c87d0ae917f82b`,
 `0x8366a39cc670b4001a1121b8f6a443a643e40951` — `DECISIONS.md §12`) before
-assuming any match.
+assuming any match. Both other named candidates are now ruled out or unlocatable
+(above) — this list is close to exhausted as a source of leads for that
+specific router pattern.
