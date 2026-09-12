@@ -683,3 +683,51 @@ Liquidity work paused, moved to getting Phase 2 deployable. Three steps:
 Not yet done: the actual `vercel deploy` to production, and env vars for the
 read layer (none needed today — `arc.ts` calls are all unauthenticated public
 endpoints — but worth re-checking before going live).
+
+## 14. BARC's funding chain — a third-party article, verified line by line
+
+The user found a public article ("BARC was launched with money from Arc's
+genesis block") claiming to trace BARC's launch funds back through 4 hops to a
+wallet that held USDC in Arc's genesis block, and asked us to check it rather
+than take it on faith. Every specific, checkable claim in it was verified
+directly against `arc-scan.org` and the raw RPC — **all of it held up, byte for
+byte**:
+
+| Claim | Check | Result |
+|---|---|---|
+| `0xf803dc46...` deployed BARC, spending 25.23 of 30 USDC | `/v1/txs/{launch tx hash}` | value = `25.231023989197571289` USDC exactly |
+| Deployer wallet: 3 transactions total, ~1 day old | `/v1/address/{addr}/txs` + `/facts` | exactly 3 txs; funded 2026-09-08T18:24Z, launched 2026-09-09T19:40Z (~25h) |
+| Deployer funded with exactly 30 USDC by `0x67d615d6...` | `/facts.funded_by` | `amount: 30 USDC`, matches |
+| Funder has EIP-7702 delegation, code `0xef0100...9b1d0af2...` | `eth_getCode` | byte-for-byte match |
+| That implementation answers `namespaceAndVersion()` with `Uniswap.Calibur.1.0.0` | raw `eth_call` | exact string match, ABI-decoded |
+| Funder received 500 USDC from the faucet as 1 + 499 on 9 June 2026 | `/facts.funded_by` | first hop = 1 USDC, timestamp → `2026-06-09T14:47:15Z` |
+| Genesis wallet held 10,000 USDC at block 0 | `eth_getBalance(addr, "0x0")` | `0x21e19e0c9bab2400000` = exactly 10,000 USDC |
+| Genesis wallet funded the faucet at block 9327, 15 May 2026 | its own tx history | block 9327, timestamp → `2026-05-15T15:17:24Z`, exact |
+| Exactly 8 native-USDC transfers in Arc's first 20,000 blocks, all from the genesis wallet | its own tx list | blocks 9327/9329/9332/9334/9336/9338/9340/9343 — 8, all under 20,000 |
+| CCTP's first-ever activity on Arc was block 718542, 19 May 2026 | CCTP transmitter's `/facts.first` | block 718542, timestamp → `2026-05-19T19:45:30Z`, exact |
+| `0x0000ffff...` (BARC/sharc_attac's mystery router head, `DECISIONS.md §12`) is Uniswap's own Liquidity Launcher; `0x8366a39c...` is the Uniswap v4 PoolManager | article's own labelling, consistent with the Calibur/Universal-Router/PoolManager pattern seen throughout | **resolves §12's open question** — not a bespoke per-launchpad router, it's Uniswap's own official V4 launch infrastructure, which is why BARC and sharc_attac (both direct-to-Uniswap launches, not from a branded launchpad) share the same intermediate addresses |
+
+**What this actually proves, and what it doesn't.** The chain-of-custody is
+real: BARC's launch money is genesis-sourced, and genuinely predates CCTP
+(so it wasn't bridged in — it was chain-native from block 0). But the article's
+framing — comparing BARC to TST/PURR/other tokens that "mooned" from
+insider-adjacent launches, closing with "BARC has no ceiling" — is a bullish
+thesis the on-chain facts don't actually support on their own: the faucet in
+this chain fanned out to **247 different wallets**, and its own nonce (340)
+matches heavy routine use. A wallet funded by that faucet is far more likely to
+mean "an early Arc developer/bot got starter gas from the chain's own public
+faucet" than "this specific memecoin has secret team backing" — on a chain
+four months old with CCTP still young, most early activity plausibly traces
+back to the same handful of bootstrap sources. **This dilutes the "insider"
+read considerably**, and BARC's own price action already contradicts the "no
+ceiling" prediction: it was one of the 3 real, currently-crashing tokens
+checked in §11 (−56.42% 24h at the time).
+
+**Product takeaway, reported to the user rather than acted on unilaterally**:
+this specific signal ("deployer funding traces back N hops to a genesis-era
+wallet") is probably **not** a good candidate for a new `score.ts` term — with
+one public faucet touching 247+ wallets on a young chain, it likely has very
+low discriminating power (most legitimate early activity would trace back the
+same way). It's a much better fit for Phase 2's community-report layer
+(`PHASE2.md`) — exactly the "off-chain fact, a deeper on-chain finding" case
+that layer exists for — than for the automatic, generalizable score.

@@ -176,11 +176,15 @@ ArcVet's scope ever grows past "token launch trust" (e.g. `@catena_labs` and
 angle discussed alongside ArcVet before Phase 1 was chosen; full list not
 reproduced here — ask if this needs expanding into its own section later).
 
-**Still open**: check `eth_getCode`/bytecode + first-launch tx for a token from
-`@arcfunxyz` (not yet attempted) against BARC/sharc_attac's known factory-hop
-addresses (`0x0000ffffbe8efe702c8703ae3477ff5de3d319c0`,
-`0x6049c9a0e26405c0985f9e3685c87d0ae917f82b`,
-`0x8366a39cc670b4001a1121b8f6a443a643e40951` — `DECISIONS.md §12`) before
-assuming any match. Both other named candidates are now ruled out or unlocatable
+**Resolved, and not a launchpad at all** (`DECISIONS.md §14`, verified against
+a third-party article's on-chain claims): `0x0000ffffbe8efe702c8703ae3477ff5de
+3d319c0` is **Uniswap's own official Liquidity Launcher** on Arc, and
+`0x8366a39cc670b4001a1121b8f6a443a643e40951` is **the Uniswap v4 PoolManager**
+itself — chain-wide, shared infrastructure, not a per-launchpad router. BARC
+and sharc_attac share those addresses because both were launched *directly*
+through Uniswap's V4 tooling, not through a third-party-branded launchpad —
+explaining why no launchpad's own factory (ArcadeSwap, arcfunxyz, or anything
+else on this list) was ever going to match. `@arcfunxyz` is no longer worth
+checking for this specific question.
 (above) — this list is close to exhausted as a source of leads for that
 specific router pattern.
