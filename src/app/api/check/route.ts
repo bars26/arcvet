@@ -5,10 +5,7 @@ import { getTokenSignals } from "@/lib/tokenSignals";
 import { scoreToken } from "@/lib/score";
 
 export const dynamic = "force-dynamic";
-// A fresh token's transfer history scans in seconds; an old, heavily-traded one
-// (see DECISIONS.md §6 — RABBIT took ~217s) can run long. Phase 1 targets the
-// former; this ceiling just keeps the latter from hanging forever.
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 /** BigInt-safe JSON: stringify bigints as decimal strings. */
 function replacer(_key: string, value: unknown): unknown {

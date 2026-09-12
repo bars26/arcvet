@@ -434,3 +434,83 @@ on chain 5042, **the real decision for Phase 2 is whether ArcVet should read cha
 list. Warp's factory is registered in `KNOWN_LAUNCH_FACTORIES` with `chainId: 5042`
 and is explicitly inert (§8) until that decision is made and a chain-5042 read path
 exists to use it.
+
+**Decided the same day: yes — drop testnet, read chain 5042 directly.** See §10.
+
+## 10. The pivot — `arc.ts` rewritten for chain 5042, testnet dropped
+
+Not "add mainnet support alongside testnet" — the user's call was to point at chain
+5042 **only**, since that's where everything real actually is (§9). `arc.ts` was
+rewritten rather than parameterised over two chains; `arcTestnet` is gone.
+
+**Chain config**: `ARC_CHAIN_ID = 5042`, RPC `https://rpc.arc-scan.org` (the
+*official* public RPC named in `arc-scan.org/developers` — not Warp's own private
+Railway proxy, which was only ever useful for de-risking this). API base
+`https://api.arc-scan.org`. A descriptive `User-Agent` header is sent on every
+`api.arc-scan.org` call — its docs say default HTTP-client UAs get 403'd by the edge
+before reaching the service.
+
+**Every primitive got simpler, not just re-pointed**, because `api.arc-scan.org`'s
+REST surface (`/v1/...`) directly answers things the testnet-era code had to
+reconstruct by hand:
+
+- `getContractCreation` — `contract.getcontractcreation` is refused on this
+  deployment ("no otterscan namespace"). Replaced with
+  `/v1/address/{addr}/facts` → first-activity tx hash → `/v1/txs/{hash}` → that
+  transaction's `from` and `block.timestamp`. For a factory-pattern launch this
+  still resolves to the *human* creator (`tx.from`), not the factory (`tx.to`) —
+  confirmed live on Warp's own token, whose "first" tx is the `createToken` call.
+- `getEarlyTransfers` — replaced the chunked-RPC `eth_getLogs` scanner entirely.
+  `/v1/tokens/{addr}/transfers` is cursor-paginated and returns `total` directly
+  (no more summing pages to get a transfer count), and its `oldest_cursor` jumps
+  straight to a token's earliest activity — so the creator-early-accumulation
+  window is a handful of pages from genesis, not a scan of the token's entire
+  history. Confirmed exact on WARP: the two earliest transfers are the mint
+  (`0x0 → curve`, 1e9) and the creator's first buy — same story `eth_getLogs`
+  chunking told on testnet's RABBIT, reached in one call instead of many.
+- `getTopHolders` — `/v1/tokens/{addr}/holders` is **server-side ranked already**.
+  Testnet had no equivalent (`tokenholderlist` answered "Unknown action" —
+  DECISIONS.md §3 item 3) and ArcVet reconstructed balances from every transfer by
+  hand; that whole code path is gone.
+- `getCreatedContracts` — `/v1/address/{addr}/txs` tags each entry with
+  `created_contract` (non-null for a plain top-level `CREATE`) and
+  `method.is_creation`/`method.selector` directly, so the `KNOWN_LAUNCH_FACTORIES`
+  match no longer has to guess a creation tx's shape from an absent field.
+- `isVerified` — kept, but arc-scan.org's own docs say plainly that its
+  verification provider doesn't cover chain 5042 yet, so expect `false` for every
+  token today. Not hardcoded to `false` in case that changes.
+- Rate limiting/backoff shrank a lot: chain 5042's limit is a 300-request burst
+  refilling at 60/s (§9) vs. testnet's ~10-per-~21h. The disk cache (`cache.ts`)
+  stayed — still useful for dev-loop speed and politeness — but the aggressive
+  multi-attempt exponential backoff testnet needed is gone; a bare 429/`retry-after`
+  retry is enough here.
+
+**One real bug found running this against live data, fixed on the spot**: the
+`topEoaHolder` search doesn't exclude `0x000…dead`, the conventional burn address.
+Checking Argus (`LAUNCHPADS.md`), its #1-ranked holder *was* the burn address —
+which would have read as "63% concentrated in one risky wallet" for what is
+actually **deflationary supply removal**, the opposite of a risk signal.
+`0x…dead` is technically a codeless EOA (`isContractAddress` correctly says no), so
+nothing in the old logic caught it. Fixed in `tokenSignals.ts`: excluded alongside
+the zero address. Re-ran Argus after the fix — a real wallet (3.00% share) surfaced
+instead, score unchanged (69) since it landed in the same term bucket.
+
+**Verified live, end to end, twice, immediately after the rewrite:**
+
+| token | age | transfers | top EOA | deployer launches (7d) | owner | score | confidence |
+|---|---|---|---|---|---|---|---|
+| WARP (circlewarp.fun's own token) | 44.4d | 10,834 | 2.61% | 0 | no-admin | **75** | high |
+| Argus (a TollyLabs token) | 232h | 6,164 | 3.00% (post burn-address fix) | 28 | **live-owner** | **69** | high |
+
+Both plausible and legible: WARP (the platform's own flagship token, well
+distributed, no admin) scores comfortably higher than a random TollyLabs launch
+whose deployer address created 28 tokens in a week and still holds live owner
+privileges — without either looking anything like RABBIT's front-run, concentrated
+testnet case. `tsc` + `eslint` clean throughout.
+
+**Left as-is, deliberately:** `scripts/fixture-rabbit.ts` (SPEC.md §8's testnet
+worked example) still passes unmodified — it calls `scoreToken` directly with
+hand-built `TokenSignals`, so it never touched the read layer and needed no changes.
+`KNOWN_LAUNCH_FACTORIES` keeps lolpad's testnet entry (`chainId: 5042002`), inert
+under the chain-scoped filter (§8) — a harmless historical record, not dead code
+worth deleting.

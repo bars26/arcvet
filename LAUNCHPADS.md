@@ -4,33 +4,38 @@ _Collected 2026-09-12, ahead of Phase 2. Browser-only recon (free) plus a couple
 arcscan/RPC spot-checks. Purpose: know what's actually live on Arc before deciding
 what `KNOWN_LAUNCH_FACTORIES` (see `arc.ts` §8 in `DECISIONS.md`) needs to cover next._
 
-> **Two different chains, confirmed while doing this recon — see `DECISIONS.md §9`
-> for the full write-up.** Arc is *two* networks: **Arc Testnet, chain 5042002**
-> (`rpc.testnet.arc.network` / `testnet.arcscan.app` — everything ArcVet has read so
-> far, including every SPEC.md reference case) and **Arc — the real production
-> chain, chain 5042** (`rpc.arc-scan.org` / `api.arc-scan.org`, live since at least
-> late August with ~100K tx/day). Checking these platforms found that **lolpad.fun
-> is the outlier here, on testnet** — Warp and TollyLabs are both confirmed live on
-> chain **5042**, i.e. the real network, and arcpad.meme/minara.fun/radardex.pro are
-> unconfirmed but likely the same given they're not on testnet either. **Most of
-> what's actually exciting on Arc right now is on mainnet, not testnet** — a real
-> scope question for Phase 2, not just a factory-list addition.
+> **Two different chains, confirmed while doing this recon — see `DECISIONS.md
+> §9-10` for the full write-up.** Arc is *two* networks: **Arc Testnet, chain
+> 5042002** (`rpc.testnet.arc.network` / `testnet.arcscan.app` — where ArcVet
+> started, including SPEC.md's original RABBIT/CATTY/ARCAT reference cases) and
+> **Arc — the real production chain, chain 5042** (`rpc.arc-scan.org` /
+> `api.arc-scan.org`, live since at least late August with ~100K tx/day). Checking
+> these platforms found **lolpad.fun is the outlier, on testnet** — Warp and
+> TollyLabs are both confirmed live on chain **5042**, and arcpad.meme/minara.fun/
+> radardex.pro are unconfirmed but likely the same given they're not on testnet
+> either. **Decided the same day: ArcVet now reads chain 5042 exclusively — testnet
+> support was dropped, not kept alongside it.** `arc.ts` was rewritten for chain
+> 5042 (`DECISIONS.md §10`); lolpad's factory stays registered as an inert
+> historical record, not a live target.
 
 ## Live, real tokens, worth building against
 
-### lolpad.fun — already integrated, and it's the outlier: this one is testnet
+### lolpad.fun — testnet only; ArcVet no longer reads this chain
 Bonding-curve, USDC/stock-paired ("pair your meme with GOOGL/NVDA/SPCX"), graduates
 to its own DEX (**LolSwap**) at a fixed market cap. Factory `0xabE2dA9AB9F94F2Cf3B74B463E115E275e5007D5`,
-create selector `0x054b880d`, both registered in `KNOWN_LAUNCH_FACTORIES`
-(`DECISIONS.md §8`) with `chainId: 5042002`. This is the platform RABBIT/CATTY/ARCAT
-(our SPEC.md reference cases) come from — confirmed real on Arc **Testnet**.
+create selector `0x054b880d`, registered in `KNOWN_LAUNCH_FACTORIES`
+(`DECISIONS.md §8`) with `chainId: 5042002` — kept as a historical record (it's how
+the whole formula was validated: RABBIT/CATTY/ARCAT, SPEC.md's original reference
+cases) but inert now that the read layer targets chain 5042 only (`DECISIONS.md
+§10`).
 
-### circlewarp.fun ("Warp") — integrated, and the reason chain 5042 was found
+### circlewarp.fun ("Warp") — fully wired, the reason chain 5042 was found
 
-**Factory confirmed: `0x0dCad158e98bC24455f9e94F46709d8a5F6D1255`, create selector
-`0xefbe8fd1`, on chain 5042 — not the testnet this repo otherwise reads.** Registered
-in `arc.ts`'s `KNOWN_LAUNCH_FACTORIES` with `chainId: 5042` and scoped inert (§9 in
-`DECISIONS.md` — matching only happens for the chain this file actually reads).
+**Factory confirmed and live: `0x0dCad158e98bC24455f9e94F46709d8a5F6D1255`, create
+selector `0xefbe8fd1`, on chain 5042 — now ArcVet's only chain (`DECISIONS.md
+§10`).** Registered in `arc.ts`'s `KNOWN_LAUNCH_FACTORIES` with `chainId: 5042` and
+**active** — `getCreatedContracts` genuinely counts a creator's Warp launches today
+(confirmed live: WARP's own creator shows 7 launches in the surrounding 7 days).
 
 **243 tokens launched, $1.96M volume** at the time this was checked. Directly
 relevant to ArcVet because:

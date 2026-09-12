@@ -129,13 +129,26 @@ Example, for a token matching the real RABBIT case:
 "Confidence: medium (3 days old, 25 transfers)"
 ```
 
-## 8. Reference value (sanity anchor, real data — `DECISIONS.md` §4)
+## 8. Reference values (sanity anchors, real data)
 
-RABBIT (lolpad.fun, graduated, "LP Locked Forever"): topEoaShare ≈ 0.630,
-creatorEarlyShare ≈ 0.190, 1 prior launch from the same deployer, no owner,
-unverified → **score = 27, confidence medium** (`scripts/fixture-rabbit.ts`,
-run against the real numbers in §4) — correctly flagged as risky despite the
-platform's own "graduated / locked" badge.
+These formula weights and caps were derived and frozen while ArcVet still read
+**Arc Testnet** — since `DECISIONS.md §9-10`, the live app reads **Arc, chain 5042**
+(the real network) instead. The formula itself didn't change; only the data source
+did. Kept for both, since they anchor different things:
+
+- **RABBIT** (lolpad.fun, Arc **Testnet**, graduated, "LP Locked Forever"):
+  topEoaShare ≈ 0.630, creatorEarlyShare ≈ 0.190, 1 prior launch from the same
+  deployer, no owner, unverified → **score = 27, confidence medium**
+  (`scripts/fixture-rabbit.ts` — a pure `scoreToken` unit test, still runs
+  regardless of which chain the read layer targets) — correctly flagged as risky
+  despite the platform's own "graduated / locked" badge. `DECISIONS.md §4`.
+- **WARP** (circlewarp.fun's own token, Arc **chain 5042**, 44 days old, 10,834
+  transfers, 1097 holders): topEoaShare ≈ 0.026, no early creator accumulation, no
+  owner, unverified (nothing on chain 5042 is verified yet — `DECISIONS.md §9`) →
+  **score = 75, confidence high** (`npx tsx scripts/check-token.ts`, live).
+- **Argus** (a TollyLabs token, chain 5042, 232h old): topEoaShare ≈ 0.030, a live
+  owner address, deployer launched 28 other tokens in the surrounding 7 days →
+  **score = 69, confidence high**. `DECISIONS.md §10`.
 
 ## 9. Versioning
 

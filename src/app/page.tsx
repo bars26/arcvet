@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 
-const EXPLORER = "https://testnet.arcscan.app";
+const EXPLORER = "https://arc-scan.org";
 const PRESETS = [
-  { label: "RABBIT (lolpad)", address: "0xbd2297cca409a8af3c864cae17292457ec72a325" },
-  { label: "CATTY (lolpad)", address: "0xb57e727373d2aed4d693e155d6cd91712d76e4e8" },
-  { label: "ARCAT (lolpad)", address: "0xb8ce7db6b21caacd7954a21c8b4520be3c806aa4" },
+  { label: "WARP (warp)", address: "0x384c60f98ecd4c26345499345c03d677e40f115e" },
+  { label: "Argus (tolly)", address: "0xece5ca8bf9220718e5727754026757512212cb3c" },
+  { label: "ACAT (tolly)", address: "0xf80457274fa646c7a8e0942d48be703864ef3d01" },
 ];
 
 type Confidence = "none" | "low" | "medium" | "high";
@@ -98,7 +98,7 @@ export default function Home() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="0x… token address on Arc Testnet"
+            placeholder="0x… token address on Arc"
             className="w-full flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-400 sm:w-auto"
           />
           <button
@@ -111,7 +111,7 @@ export default function Home() {
         </form>
 
         <div className="mb-6 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-500">real lolpad.fun launches:</span>
+          <span className="text-slate-500">real launches (Warp, Tolly):</span>
           {PRESETS.map((p) => (
             <button
               key={p.address}
@@ -127,12 +127,7 @@ export default function Home() {
           ))}
         </div>
 
-        {loading && (
-          <p className="text-sm text-slate-400">
-            Scanning Arc Testnet — a young token takes seconds, an older one can take longer
-            (transfer history is read in chunks from the raw RPC)…
-          </p>
-        )}
+        {loading && <p className="text-sm text-slate-400">Scanning Arc…</p>}
         {error && (
           <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">
             {error}

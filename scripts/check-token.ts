@@ -1,15 +1,16 @@
 /**
- * End-to-end check: fetch real signals for a token address and score it.
+ * End-to-end check: fetch real signals for a token address on Arc (chain 5042) and
+ * score it.
  *   npx tsx scripts/check-token.ts <tokenAddress>
- * Defaults to RABBIT (DECISIONS.md §4 / SPEC.md §8's worked example) if no
- * address is given, so `npx tsx scripts/check-token.ts` alone reproduces it live.
+ * Defaults to WARP (circlewarp.fun's own token — LAUNCHPADS.md) if no address is
+ * given, so `npx tsx scripts/check-token.ts` alone works out of the box.
  */
 import type { Address } from "viem";
 import { getTokenSignals } from "../src/lib/tokenSignals";
 import { scoreToken } from "../src/lib/score";
 
-const RABBIT = "0xbd2297cca409a8af3c864cae17292457ec72a325" as Address;
-const target = (process.argv[2] as Address) ?? RABBIT;
+const WARP = "0x384c60f98ecd4c26345499345c03d677e40f115e" as Address;
+const target = (process.argv[2] as Address) ?? WARP;
 
 console.log(`Fetching live signals for ${target} ...`);
 const signals = await getTokenSignals(target);

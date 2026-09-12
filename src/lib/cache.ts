@@ -1,14 +1,16 @@
 /**
  * Small disk-backed cache so repeated checks — dev testing, or multiple visitors
- * hitting the same token — don't re-spend arcscan's tight anonymous rate limit
- * (DECISIONS.md §5: 10 requests per ~21h). One JSON file per namespace under
- * `.cache/` (gitignored).
+ * hitting the same token — don't re-fetch what never changes. Originally built
+ * against Arc Testnet's tight anonymous rate limit (DECISIONS.md §5: 10 requests
+ * per ~21h); chain 5042's api.arc-scan.org is far more generous (DECISIONS.md §9-10)
+ * but the cache is kept regardless — free politeness and dev-loop speed either way.
+ * One JSON file per namespace under `.cache/` (gitignored).
  *
  * Caveat, same one ProofGraph's x402 free-tier bucket carries: this is a local
  * filesystem cache. Fine for local dev and a single long-running instance; a
  * serverless multi-instance deployment (Vercel) won't share it across instances
- * or survive a redeploy. Good enough for Phase 1 / testnet — a shared store
- * (KV/DB) is the real fix once ArcVet takes real traffic.
+ * or survive a redeploy. Good enough for Phase 1 — a shared store (KV/DB) is the
+ * real fix once ArcVet takes real traffic.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
