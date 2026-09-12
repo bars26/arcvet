@@ -192,3 +192,77 @@ launchpad-specific signal, distinct from generic "holder concentration."
 | Contract verification (`getsourcecode`) | ⚠️ keep but **conditional** — non-discriminating for factory-clone launches (all unverified), still meaningful for bespoke/hand-written contracts (Knidos was verified) |
 | Generic `owner()` / admin probe | ⚠️ keep but conditional — same reasoning, uniform "no owner" across an entire clone-factory's output |
 | Liquidity lock/pull via LolSwap | 🔜 not wired up yet, but now known feasible — LolSwap exists |
+
+## 5. BLOCKER — public arcscan API rate limit is much tighter than assumed
+
+Wiring the real read layer (`src/lib/arc.ts` + `tokenSignals.ts`) to run
+end-to-end against RABBIT hit a hard wall immediately: after this session's Day-1/4
+manual probing, the anonymous arcscan API is now fully rate-limited. Confirmed via
+response headers on a single, isolated diagnostic call:
+
+```
+HTTP/2 429
+x-ratelimit-limit: 10
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 75393        (seconds — ≈ 20.9 hours)
+body: {"message":"Too many requests. Increase limits now at
+       https://dev.blockscout.com","result":null,"status":"0"}
+```
+
+**This is a materially different situation from ProofGraph's Day-1 finding.**
+ProofGraph hit "the public RPC prunes history" and worked around it by moving log
+queries to arcscan's API — arcscan itself was fine there because ProofGraph's actual
+per-query call volume was low (a handful of reads per score, cached implicitly by
+the UI's request cadence). ArcVet's `getTokenSignals` needs ~5-8 arcscan calls per
+token (creation lookup, full transfer log, verification, deployer's created-contracts
+list, ...), and evidently **10 requests total is the anonymous ceiling for a ~21h
+window** — not per-minute, per-hour-ish, or bursty. One real end-to-end check can
+exhaust it; a live product doing this per visitor cannot function against the
+anonymous tier as built.
+
+**Implication — this needs a decision before the read layer can be validated live,
+let alone shipped:** either (a) find/obtain an authenticated arcscan/Blockscout API
+key with a materially higher limit (`dev.blockscout.com` is referenced directly in
+the error), (b) re-check whether the *raw RPC* actually has more log retention than
+ProofGraph's finding assumed for *recent* (not full-history) ranges, which would let
+us serve recent-token checks from the RPC and reserve arcscan calls for the
+deployer-history lookup only, or (c) build a small self-hosted cache/indexer so a
+given token/deployer is only ever queried once against arcscan, not once per visitor.
+
+Code (`arc.ts`, `tokenSignals.ts`, `score.ts`, fixtures) is written and typechecks
+clean, but **not yet validated against live data** — the RABBIT fixture (§4,
+`scripts/fixture-rabbit.ts`) proves the formula's arithmetic; `scripts/check-token.ts`
+proves nothing yet because it can't complete a run right now.
+
+## 6. Resolution — the heaviest call was moved off arcscan entirely, and it's real
+
+Re-checked the "public RPC prunes history" assumption directly (ProofGraph's Day-1
+finding, taken at face value in §3 above) using **only the raw RPC** — zero arcscan
+calls, so this cost none of the exhausted budget. Result: **that assumption was too
+strong.** The RPC doesn't prune the logs; a single unbounded `eth_getLogs` call fails
+on *response size* (`"HTTP response body exceeded the size limit"`) and on *request
+rate* (`code -32005 "rate limit exceeded"`) — both fixable by chunking block ranges
+and spacing requests out, not signs the data is gone.
+
+`getAllTransfers` (`src/lib/arc.ts`) was rewritten to page through the raw RPC in
+(adaptively-shrinking) block-range chunks with a retry-backoff on the RPC's own rate
+limit, instead of arcscan's `logs/getLogs`. **Validated end to end against RABBIT
+with zero arcscan calls: found all 25 transfers, an exact match against arcscan's
+count from §4** — same events, same order, same amounts. Took 216.6s for RABBIT
+specifically (~415,000 blocks from creation to head, because RABBIT is already
+several days old by Arc's block rate) — a token checked within its first hours or
+day of life, Phase 1's actual target, spans a tiny fraction of that and should
+resolve in a few seconds.
+
+**Net effect on the arcscan-only blocker in §5:** the only calls that still have no
+RPC equivalent are `getcontractcreation` (who deployed it + when — 1 call) and the
+deployer's created-contracts lookup (`account/txlist`, paginated — typically 1 call
+for a low-activity deployer) and `getsourcecode` (verification — 1 call). **A full
+`getTokenSignals` run now costs ~3 arcscan calls instead of ~5-8.** That's a real
+improvement but does not remove the constraint: the anonymous limit is still 10
+requests per ~21h window, so even at 3/check that's only ~3 checks per window with
+no API key. §5's options (a)/(c) — an API key, or caching so a given token/deployer
+is only ever looked up once — still stand for anything beyond occasional manual
+testing. The budget is at 0 as of this session and won't reset for ~21h from
+2026-09-12 ~08:00 UTC, so `scripts/check-token.ts` (which needs all three) can't
+complete a fresh run until then regardless of how efficient the RPC side is.
