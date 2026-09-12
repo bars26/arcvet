@@ -601,3 +601,46 @@ when the work is "couldn't tell."
 Re-ran `scripts/fixture-rabbit.ts` after both fixes: unchanged, score 27, as
 expected — a pure `scoreToken` unit test with `holderDataAvailable: true` added
 to its hand-built input. `tsc` + `eslint` clean.
+
+## 12. Liquidity signal — hypothesis tested and falsified as a generic rule
+
+Directly following §11's gap (no signal reads DEX liquidity at all), tested one
+candidate generic approach before writing any scoring code: **since every
+bonding-curve mint sends 100% of supply to a single contract, does the recipient
+of a token's very first `Transfer(0x0 -> X, totalSupply)` generically identify
+"the pool," regardless of which launchpad's contract template was used?** This
+would be attractive because it needs zero new bytecode analysis — `getEarlyTransfers`
+already fetches this data.
+
+Checked the genesis transfer(s) for all 5 reference tokens (`scripts/liquidity-recon.ts`,
+walking to `oldest_cursor` on `/v1/tokens/{addr}/transfers`):
+
+| Token | Mint pattern | Hops to final resting address | Result |
+|---|---|---|---|
+| WARP | single hop | 1 | Recipient `0xff32834f...` — **exact byte-for-byte match** to Warp's own bytecode-embedded curve-address view (`0x7165485d`), independently confirmed in the prior recon pass. Clean confirmation. |
+| VORT | 2-hop chain (`method: null`, plain transfers, not a router call) | 2 | Naive "immediate recipient" (`0xb742e4d2...`) is **not** the final resting address — supply moves on to `0x9abf283f...` one hop later. The one-hop version of the hypothesis silently picks the wrong address. |
+| Argus (Tolly) | single hop | 1 | Recipient found (`0x0f1c7cb2...`), but Argus's contract is an EIP-1167 minimal-proxy clone (§10) — no independent confirmation this is a liquidity pool rather than a vesting/allocation contract. Unverified. |
+| BARC | 6-hop chain, every hop tagged `method: multicall`, atomic — all in one block | 6+ | Mint routes through `0x0000ffff...` → `0xfe7be4eb...` → `0x6049c9a0...` → `0x8366a39c...` → back through `0xfe7be4eb...` → partially burned, partially settling at `0xf803dc46...`. |
+| sharc_attac | Same shape as BARC, 6-hop atomic `multicall` chain | 6 | Shares **three of the same intermediate addresses** as BARC's chain (`0x0000ffff...`, `0x6049c9a0...`, `0x8366a39c...`) — clearly shared router/aggregator infrastructure behind both launches, not launchpad-specific curve contracts. Final resting address differs per token. |
+
+**Verdict: falsified as a generic, hop-count-agnostic rule.** It only holds cleanly
+for Warp's specific design (single deliberate recipient, independently confirmed).
+VORT already breaks the *one-hop* version. BARC and sharc_attac go through a
+shared multi-hop atomic router — same shape as, but a different platform than,
+Warp's `ArcFactory`, and different again from lolpad's. This is the same lesson
+`KNOWN_LAUNCH_FACTORIES` already forced (§8): there is no bytecode- or
+mint-shape-based shortcut across launchpads, only per-platform registration.
+
+**A genuine, narrow, checkable result did come out of this**, not thrown away:
+Warp's own curve (`0xff32834f...`) currently holds **0.0000002 USDC** — essentially
+nothing. Read naively this looks alarming, but Warp graduates a curve to
+WarpDex/Uniswap V4 at $69K mcap and the curve balance is expected to drain to ~0
+*on success* — so "curve balance ≈ 0" is ambiguous by itself: it means either
+"rugged" or "graduated," and ArcVet cannot yet tell those apart (would need to
+check whether a corresponding WarpDex pool now holds the liquidity instead).
+VORT's true final-resting address (`0x9abf283f...`, found only after correcting
+for the 2-hop chain) was not yet balance-checked before this was written up.
+
+**Decision: paused, not shipped.** Did not write a `liquidityHealth` term against
+an unreliable address-detection method. Reported findings to the user rather than
+continuing to guess at more launchpads' router shapes unprompted.

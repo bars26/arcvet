@@ -22,8 +22,15 @@ type TokenSignals = {
   totalSupply: bigint;
   topEoaHolder: { address: `0x${string}`; balance: bigint } | null;
   // ^ largest holder that is a plain EOA (eth_getCode == "0x"), excluding the token
-  //   contract itself. null if no EOA holds a nonzero balance (e.g. everything still
-  //   sits in a contract — a pool, a curve, a vesting contract).
+  //   contract itself and the burn address. null if no EOA holds a nonzero balance
+  //   (e.g. everything still sits in a contract — a pool, a curve, a vesting
+  //   contract) OR if the holders read failed — see holderDataAvailable below.
+  holderDataAvailable: boolean;
+  // ^ false means the upstream holders endpoint itself failed (DECISIONS.md §11 —
+  //   confirmed real: arc-scan.org's /v1/tokens/{addr}/holders returned an internal
+  //   error for a real token). topEoaHolder is null in that case too, but for a
+  //   different reason (unknown, not "checked and found none") — holderConcentration
+  //   must be dropped, not scored as if concentration were fine.
   creator: `0x${string}`;
   creatorEarlyAcquired: bigint;       // amount the creator acquired via transfers IN,
   // ^ from any counterparty, within EARLY_WINDOW_HOURS (24h) of the mint event.
@@ -61,7 +68,8 @@ holderConcentration:
   topEoaShare = topEoaHolder ? topEoaHolder.balance / totalSupply : 0
   value = clamp(1 - topEoaShare / 0.5, 0, 1)
   // 0% in any single EOA -> 1 (best). >=50% in one EOA -> 0 (worst, capped there).
-  applicable when transferCount > 0 (nothing to measure on a token with zero transfers)
+  applicable when transferCount > 0 AND holderDataAvailable
+  // (nothing to measure on a zero-transfer token, or when the holders read failed)
 
 creatorEarlyAccumulation:
   earlyShare = creatorEarlyAcquired / totalSupply
@@ -149,6 +157,21 @@ did. Kept for both, since they anchor different things:
 - **Argus** (a TollyLabs token, chain 5042, 232h old): topEoaShare ≈ 0.030, a live
   owner address, deployer launched 28 other tokens in the surrounding 7 days →
   **score = 69, confidence high**. `DECISIONS.md §10`.
+- **BARC / sharc attac / VORT** (3 real, currently-crashing chain 5042 tokens
+  found on RadarDex's live leaderboard, −55% to −56% 24h at time of check, 1-2
+  days old): scored **96\*** (BARC, only 4 terms — holder data unavailable, see
+  `holderDataAvailable` in §2), **88** (sharc attac), **75** (VORT), all
+  medium confidence — **none flagged as risky**. Not proof any of the three is a
+  rug: price decline alone isn't evidence of malicious intent. But it confirms a
+  real, previously-known gap (this section historically carried "liquidity
+  lock/pull: not wired up") — every current term reads ERC-20 state, none read
+  DEX pool/price dynamics, so a rug mechanism playing out through the pool would
+  be invisible here regardless of what actually happened to these three.
+  `DECISIONS.md §11`. A follow-up attempt to add a generic liquidity signal
+  (`DECISIONS.md §12`) was tried and paused — the natural candidate signal (a
+  token's mint recipient identifies its pool) only holds for one launchpad
+  template and breaks on others, the same lesson `KNOWN_LAUNCH_FACTORIES`
+  already forced: no shortcut, only per-platform work.
 
 ## 9. Versioning
 
