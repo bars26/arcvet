@@ -12,6 +12,7 @@ const result = scoreToken({
   transferCount: 25, // real count, DECISIONS.md §4
   totalSupply,
   topEoaHolder: { address: "0x8f9da437878de701094e5644de7296255aa52451", balance: (totalSupply * 6296n) / 10000n },
+  holderDataAvailable: true,
   creator: "0x80b4320815273a04084cdca656e7b094dfc6895f",
   creatorEarlyAcquired,
   deployerPriorLaunches7d: 1, // same deployer also made CATTY

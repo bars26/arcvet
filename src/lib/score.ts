@@ -20,9 +20,19 @@ export type TokenSignals = {
   /**
    * Largest holder that is a plain EOA (eth_getCode == "0x"), excluding the token
    * contract itself. `null` if no EOA holds a nonzero balance (everything still
-   * sits in a contract — a pool, a curve, a vesting contract).
+   * sits in a contract — a pool, a curve, a vesting contract) — only meaningful
+   * when `holderDataAvailable` is true; see that field.
    */
   topEoaHolder: { address: `0x${string}`; balance: bigint } | null;
+  /**
+   * Did the holder-ranking read actually succeed? `false` means the upstream
+   * holders endpoint failed (DECISIONS.md §11 — confirmed real, not hypothetical:
+   * arc-scan.org's `/v1/tokens/{addr}/holders` returned an internal error for a
+   * real token) — `topEoaHolder` is `null` in that case too, but for a *different*
+   * reason (unknown, not "checked and found none"), and the term must be dropped,
+   * not scored as if concentration were fine.
+   */
+  holderDataAvailable: boolean;
   creator: `0x${string}`;
   /** amount the creator acquired (any counterparty) within EARLY_WINDOW_HOURS of mint */
   creatorEarlyAcquired: bigint;
@@ -74,19 +84,25 @@ export function scoreToken(s: TokenSignals): ScoreResult {
   const reasons: string[] = [];
   const terms: Term[] = [];
 
+  // Always records `reason` — including why a term was dropped. An inapplicable
+  // term with a silent explanation defeats the point of an "advisory, explainable"
+  // score: found while adding the holder-data-unavailable case (DECISIONS.md §11)
+  // that the "too early to assess" case above it had the same silent-drop bug.
   const push = (key: string, weight: number, applicable: boolean, value: number, reason: string) => {
     terms.push({ key, value, weight, applicable, contribution: applicable ? value * weight : 0 });
-    if (applicable) reasons.push(reason);
+    reasons.push(reason);
   };
 
   // holderConcentration
   {
-    const applicable = s.transferCount > 0;
+    const applicable = s.transferCount > 0 && s.holderDataAvailable;
     const topEoaShare = s.topEoaHolder ? shareOf(s.topEoaHolder.balance, s.totalSupply) : 0;
     const value = clamp01(1 - topEoaShare / HOLDER_CONCENTRATION_CAP);
-    const reason = s.topEoaHolder
-      ? `Largest non-pool holder owns ${pct(topEoaShare)} of supply — a plain wallet, not a contract`
-      : "No single wallet holds a concentrated share — supply sits in contracts (pool/curve/vesting)";
+    const reason = !s.holderDataAvailable
+      ? "Holder data unavailable — this term was dropped, not assumed safe"
+      : s.topEoaHolder
+        ? `Largest non-pool holder owns ${pct(topEoaShare)} of supply — a plain wallet, not a contract`
+        : "No single wallet holds a concentrated share — supply sits in contracts (pool/curve/vesting)";
     push("holderConcentration", WEIGHTS.holderConcentration, applicable, value, reason);
   }
 

@@ -183,12 +183,25 @@ export async function getEarlyTransfers(
 
 export type RankedHolder = { address: Address; balance: bigint };
 
-/** Top holders by balance, already ranked server-side — no reconstruction needed. */
+/**
+ * Top holders by balance, already ranked server-side — no reconstruction needed.
+ * Throws on failure rather than returning `[]`: found running this against a real
+ * token (BARC — DECISIONS.md §11) whose holders endpoint answers
+ * `{"error":{"code":"INTERNAL",...}}`. An empty array here would be
+ * indistinguishable from "checked, genuinely no concentrated holder" — the wrong,
+ * falsely-reassuring answer for an active token. Match arc-scan.org's own stated
+ * philosophy (`/llms.txt`): unknown is reported as unknown, never filled in with a
+ * plausible default. The caller (`tokenSignals.ts`) turns this into an explicit
+ * "holder data unavailable" state that drops the term instead of scoring it.
+ */
 export async function getTopHolders(tokenAddress: Address, limit = 10): Promise<RankedHolder[]> {
-  const raw = await apiV1<{ items: Array<{ address: { address: string }; balance: { raw: string } }> }>(
-    `/v1/tokens/${tokenAddress}/holders`,
-    { limit: String(limit) },
-  );
+  const raw = await apiV1<
+    | { items: Array<{ address: { address: string }; balance: { raw: string } }> }
+    | { error: { code: string; message: string } }
+  >(`/v1/tokens/${tokenAddress}/holders`, { limit: String(limit) });
+  if ("error" in raw) {
+    throw new Error(`holders endpoint failed for ${tokenAddress}: ${raw.error.code} — ${raw.error.message}`);
+  }
   return raw.items.map((h) => ({ address: h.address.address as Address, balance: BigInt(h.balance.raw) }));
 }
 

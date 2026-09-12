@@ -29,10 +29,21 @@ const BURN_ADDRESS = "0x000000000000000000000000000000000000dead";
 
 const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-async function findTopEoaHolder(
-  tokenAddress: Address,
-): Promise<{ address: `0x${string}`; balance: bigint } | null> {
-  const ranked = await getTopHolders(tokenAddress, TOP_HOLDER_CANDIDATES);
+type TopHolderResult = { holder: { address: `0x${string}`; balance: bigint } | null; available: boolean };
+
+/**
+ * `available: false` means the holders endpoint itself failed (arc.ts —
+ * confirmed real on BARC, DECISIONS.md §11), not "checked, found nothing" — the
+ * caller must drop the holderConcentration term, not score it as if supply were
+ * safely spread out.
+ */
+async function findTopEoaHolder(tokenAddress: Address): Promise<TopHolderResult> {
+  let ranked;
+  try {
+    ranked = await getTopHolders(tokenAddress, TOP_HOLDER_CANDIDATES);
+  } catch {
+    return { holder: null, available: false };
+  }
   for (const holder of ranked) {
     if (
       holder.balance > 0n &&
@@ -40,10 +51,10 @@ async function findTopEoaHolder(
       !eq(holder.address, BURN_ADDRESS) &&
       !(await isContractAddress(holder.address))
     ) {
-      return holder;
+      return { holder, available: true };
     }
   }
-  return null;
+  return { holder: null, available: true };
 }
 
 /** Fetch + assemble everything `scoreToken` needs for one token address. */
@@ -58,15 +69,21 @@ export async function getTokenSignals(tokenAddress: Address): Promise<TokenSigna
   const nowSeconds = Math.floor(Date.now() / 1000);
   const tokenAgeHours = Math.max(0, (nowSeconds - mintTimestamp) / 3600);
 
-  const [{ transfers: earlyTransfers, totalTransferCount }, verified, ownerProbe, totalSupply, topEoaHolder, created] =
-    await Promise.all([
-      getEarlyTransfers(tokenAddress, mintTimestamp + EARLY_WINDOW_SECONDS),
-      isVerified(tokenAddress),
-      probeOwner(tokenAddress),
-      getTotalSupply(tokenAddress),
-      findTopEoaHolder(tokenAddress),
-      getCreatedContracts(creation.contractCreator),
-    ]);
+  const [
+    { transfers: earlyTransfers, totalTransferCount },
+    verified,
+    ownerProbe,
+    totalSupply,
+    { holder: topEoaHolder, available: holderDataAvailable },
+    created,
+  ] = await Promise.all([
+    getEarlyTransfers(tokenAddress, mintTimestamp + EARLY_WINDOW_SECONDS),
+    isVerified(tokenAddress),
+    probeOwner(tokenAddress),
+    getTotalSupply(tokenAddress),
+    findTopEoaHolder(tokenAddress),
+    getCreatedContracts(creation.contractCreator),
+  ]);
 
   const creatorEarlyAcquired = earlyTransfers
     .filter((t) => eq(t.to, creation.contractCreator))
@@ -85,6 +102,7 @@ export async function getTokenSignals(tokenAddress: Address): Promise<TokenSigna
     transferCount: totalTransferCount,
     totalSupply,
     topEoaHolder,
+    holderDataAvailable,
     creator: creation.contractCreator,
     creatorEarlyAcquired,
     deployerPriorLaunches7d,

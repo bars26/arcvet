@@ -514,3 +514,90 @@ hand-built `TokenSignals`, so it never touched the read layer and needed no chan
 `KNOWN_LAUNCH_FACTORIES` keeps lolpad's testnet entry (`chainId: 5042002`), inert
 under the chain-scoped filter (§8) — a harmless historical record, not dead code
 worth deleting.
+
+## 11. Checked the formula against 3 real, currently-crashing chain-5042 tokens — an honest gap, not a clean win
+
+The user's ask: find a real rug on chain 5042 and see if ArcVet would have caught
+it. Picked three fresh, sharply-declining tokens off RadarDex's live leaderboard —
+biggest, freshest drops, the closest thing to a real-time rug-pull signature
+available: **BARC** (−56.42% in 24h, 2 days old), **sharc attac** (−55.48%, 1 day
+old), **VORT** (−55.80%, 2 days old). Addresses pulled from the page's own DOM
+(regex over `outerHTML`), not by accepting RadarDex's terms/risk-disclosure modal —
+that would need the user's permission first and wasn't necessary to read public
+data already rendered on the page.
+
+**Result, reported exactly as it came out, not adjusted to fit a narrative:**
+
+| token | 24h | age | score | confidence |
+|---|---|---|---|---|
+| sharc attac | −55.48% | 38.8h | **88** | medium |
+| VORT | −55.80% | 67.3h | **75** | medium |
+| BARC | −56.42% | 64.1h | **96*** | medium |
+
+**All three scored medium-to-high — ArcVet's current signals did not flag any of
+them.** (*BARC's holder-concentration term dropped out — see the bug below — so its
+96 is out of 4 terms, not 5; treat it as less conclusive than the other two, which
+scored high on the full formula.)
+
+**This is not read as "the formula is broken."** A sharp price decline is not the
+same claim as a rug pull, and nothing here proves malicious intent on any of these
+three — a memecoin that pumped on launch hype and gave it back within a day or two
+is an extremely common, non-malicious pattern in this category, not necessarily
+evidence of extraction. What the result *does* show, honestly: **every signal
+ArcVet currently measures — holder concentration, creator early-accumulation,
+deployer velocity, ownership, verification — comes from ERC-20 balances and
+contract state. None of them look at the DEX pool or price action at all.** A rug
+mechanism that plays out through the pool (heavy sell pressure through the curve,
+or a liquidity pull once one exists to pull) would be genuinely invisible to this
+formula regardless of how it turned out for these three specific tokens. SPEC.md's
+formula has carried "liquidity lock/pull: not wired up" as a known, named gap since
+Phase 1 (`DECISIONS.md §3` item 7) — this is that gap actually mattering, not a new
+one. Worth being equally honest in the other direction, given how easy it would be
+to overclaim here: **we don't know these three actually were rugs.** We know
+ArcVet's current signals didn't flag them, and we know why that class of outcome —
+rug or not — would slip past a formula that never looks at price or liquidity.
+
+**Bug found and fixed in the process, unrelated to the above but found because of
+it**: `getTopHolders` crashed outright on BARC (`TypeError: Cannot read properties
+of undefined (reading 'map')`) instead of failing cleanly. Root cause, confirmed
+directly:
+
+```
+GET https://api.arc-scan.org/v1/tokens/{BARC}/holders
+-> {"error":{"code":"INTERNAL","message":"Internal server error","detail":null}}
+```
+
+A real failure on arc-scan.org's side for this specific token, not our bug — but
+our handling of it was wrong twice over. First, an unhandled crash instead of a
+clean error. Second, and worse had it gone unnoticed: if `getTopHolders` had simply
+returned `[]` on failure (the tempting quick fix), `findTopEoaHolder` would read
+that as "no concentrated holder anywhere" — score.ts would confidently report
+`holderConcentration = 1` (the *safest* possible value) for a token we in fact know
+nothing about. That's the exact failure mode arc-scan.org's own `/llms.txt`
+explicitly warns against: *"a value that cannot be known is reported as unknown and
+never filled in with a plausible one."*
+
+**Fix:** `getTopHolders` (`arc.ts`) now throws on an error-shaped response instead
+of crashing on the assumption of a well-formed one. `TokenSignals` (`score.ts`)
+gained a `holderDataAvailable: boolean` field; `findTopEoaHolder`
+(`tokenSignals.ts`) catches the throw and reports `available: false` rather than an
+empty list. `holderConcentration`'s applicability is now
+`transferCount > 0 && holderDataAvailable` — an unavailable read drops the term
+(renormalised away, same machinery as every other inapplicable term) instead of
+silently scoring as safe. Reason string: *"Holder data unavailable — this term was
+dropped, not assumed safe."*
+
+**Second, smaller bug fixed in the same pass**: `push()`, the internal helper that
+records each term's `reason` string, only appended the reason to `reasons[]` when
+the term was `applicable`. `creatorEarlyAccumulation`'s "too early to assess"
+message (written months earlier, Phase 1) had *always* been silently dropped for
+that reason — nobody had hit a genuinely-too-new token in testing to notice.
+Fixed: `push()` now always records the reason, applicable or not. An explainable
+score that silently omits the explanation for exactly the terms it couldn't
+compute was undermining the one thing this project has repeatedly leaned on
+(RABBIT, the burn-address fix, the Warp/CATTY fix) — showing its work, including
+when the work is "couldn't tell."
+
+Re-ran `scripts/fixture-rabbit.ts` after both fixes: unchanged, score 27, as
+expected — a pure `scoreToken` unit test with `holderDataAvailable: true` added
+to its hand-built input. `tsc` + `eslint` clean.
