@@ -731,3 +731,74 @@ low discriminating power (most legitimate early activity would trace back the
 same way). It's a much better fit for Phase 2's community-report layer
 (`PHASE2.md`) — exactly the "off-chain fact, a deeper on-chain finding" case
 that layer exists for — than for the automatic, generalizable score.
+
+## 15. Liquidity signal, take two — feasibility confirmed, but not the way §12 assumed
+
+§12 paused a generic liquidity signal because "find the pool by following the
+mint recipient" doesn't generalize across launchpads. §14's Uniswap-infra
+discovery (BARC/sharc_attac go through Uniswap's own official V4 stack, not a
+bespoke router) reopened the question from a completely different angle: **stop
+trying to find "the pool" heuristically — read the token's own launch
+transaction's event logs, which name the pool explicitly, no matter which
+launchpad or router touched it.**
+
+**Confirmed via `@uniswap/sdk-core`'s own `ARC_ADDRESSES` block** (`unpkg.com/@uniswap/sdk-core/dist/cjs/src/addresses.js`,
+the same official package `docs.uniswap.org` points to) — the full, canonical
+contract set Uniswap Labs itself deployed on Arc chain 5042:
+
+```
+v3CoreFactoryAddress:          0xf0db7b58379503491d857db50ac9ece64c653918
+nonfungiblePositionManager:    0x39654a85a4c05127f5fd6ed22caec077a0fb1377
+v4PoolManagerAddress:          0x8366a39cc670b4001a1121b8f6a443a643e40951  (confirmed independently, §14)
+v4PositionManagerAddress:      0x6049c9a0e26405c0985f9e3685c87d0ae917f82b  (this is the "mystery" address from §12's router chain!)
+v4StateView:                   0xf3334192d15450cdd385c8b70e03f9a6bd9e673b  ← the read-only lens we needed
+v4QuoterAddress:                0x8dc178efb8111bb0973dd9d722ebeff267c98f94
+```
+
+§12's unidentified intermediate hop (`0x6049c9a0...`) is simply the **v4
+PositionManager** — obvious in hindsight, but confirms the whole BARC/
+sharc_attac router chain was never a bespoke launchpad thing to begin with.
+
+**Method, verified end-to-end against 3 real tokens** (BARC, sharc_attac —
+V4; VORT — V3):
+
+1. A token's own launch tx (already fetched via `getContractCreation` in
+   `arc.ts`) contains the pool-creation event in its logs — no separate scan
+   needed. V4: `PoolManager.Initialize` (topic `0xdd466e67...`) gives `fee`,
+   `tickSpacing`, `hooks`, and the pool's `id` directly; the paired
+   `ModifyLiquidity` event (topic `0xf208f491...`) gives the exact liquidity
+   added at launch. V3: the factory's `PoolCreated` event gives the pool
+   address directly; the pool's own `Mint` event gives launch liquidity.
+2. Current liquidity: V4 → `StateView.getLiquidity(poolId)` (selector
+   `0xfa6793d5`, one `eth_call`, no math). V3 → the pool contract's own
+   `liquidity()` (selector `0x1a686502`).
+3. Compare current vs. launch-time liquidity. No hook complexity to worry
+   about — all 3 tokens checked used `hooks = address(0)` (plain vanilla
+   pools).
+
+**Results — genuinely surprising, and worth being honest about:**
+
+| Token | Pool type | Launch liquidity | Current liquidity | Pulled? |
+|---|---|---|---|---|
+| BARC | V4 (fee 0.25%, no hooks) | 2,237,951,930,639,278,694,508,308 | **identical** | **No — 100% intact** |
+| sharc_attac | V4 (fee 0.25%, no hooks) | 2,237,951,930,639,278,694,508,308 | **identical** | **No — 100% intact** |
+| VORT | V3 (fee 1%) | 2,280,298,132,493,470,879 | **identical** | **No — 100% intact** |
+
+**None of the 3 crashing tokens from §11 had their liquidity pulled.** Their
+−55%/−56% 24h declines happened *inside* fully intact pools — organic sell
+pressure moving the price down the curve, not a liquidity-withdrawal rug. This
+is the honest, slightly deflating finding: a liquidity-pull signal, exactly as
+scoped here, **would not have flagged any of our 3 running examples either** —
+it catches a real, different, well-known rug mechanic (dev drains the pool),
+not "the token just lost its bid."
+
+**Conclusion for the user**: technically, this is now clearly buildable —
+cleaner than any Phase 1 signal, arguably, since it reads two official,
+audited Uniswap contracts directly instead of inferring anything. But it
+answers "was liquidity pulled," not "will the price hold" or even "is this
+token being sold off" — a distinct, narrower claim than the user's original
+framing. Worth building as its own explicit term (or a penalty/override,
+given `ScoreResult.penalty` is already reserved for exactly this kind of
+severe, non-gradual risk — a pool that goes from full liquidity to near-zero
+between launch and now is categorically worse than "20% held by one wallet"),
+but scoped honestly: catches rug-pulls, not price risk in general.
