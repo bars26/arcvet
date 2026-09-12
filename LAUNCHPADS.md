@@ -129,3 +129,52 @@ to test, cross-checking holder/liquidity numbers) essentially for free.
 The user mentioned there are more launchpads beyond this list; these seven were
 called sufficient for now. Revisit and extend this file when Phase 2 needs a wider
 `KNOWN_LAUNCH_FACTORIES` set or more real test addresses.
+
+## Broader ecosystem map — from a public X post, unverified (2026-09-12)
+
+The user shared a public X (Twitter) post listing Arc mainnet ecosystem projects
+ahead of the Sept 16 public mainnet framing (see `DECISIONS.md §9` — chain 5042
+itself has actually been live and active since late August; "mainnet" here is the
+public-launch/marketing date, not when the chain started). **Not independently
+verified** — handles and one-line descriptions from a third party, not checked
+on-chain the way everything else in this file was. Kept as a lead list, not a
+source of truth.
+
+**Launchpads (the post counts ~9 live pre-mainnet; overlaps with what's above are
+noted).** Two names stand out as candidates for identifying the shared 6-hop
+atomic-`multicall` router pattern behind BARC and sharc_attac (`DECISIONS.md
+§12` — both tokens are on Tolly per the confirmed recon above, but Tolly's
+mechanism there was never resolved beyond "EIP-1167 clone," so a **direct
+Uniswap V3/V4** launch model is a plausible match for that router shape):
+- `@TollyLabs` — already confirmed live above (USDC-pool, permanently locked
+  liquidity, per this post — a detail our own recon didn't establish).
+- `@circlewarp` (Warp) — already fully confirmed above.
+- `@arcpad_meme` — already confirmed above as live; this post adds **"direct
+  Uniswap V3 launches, permanently locked LP"** — a mechanism detail worth
+  checking against arcpad's other tokens beyond the one sample (`$ARCHIE`) we have.
+- `@minarafun` — already confirmed above as live.
+- `@ArcadeSwap` — **"supports both bonding-curve and direct Uniswap V4
+  launches"** — a plausible source for BARC/sharc_attac's multi-hop router
+  pattern, not yet checked.
+- `@PUMP_archi` — **"direct Uniswap V4 token launches"** — another plausible
+  candidate for the same reason.
+- `@arcfunxyz` — bonding-curve, ~$25K graduation (vs. Warp's $69K).
+- `@actfunxyz`, `@Arguspad` (note: a *different* project from "Argus" the
+  Tolly-launched token already in our reference set — same name, unrelated),
+  `@onmidotfun`, `@Fliptfun` — not investigated.
+
+**Other categories mentioned (DEX/DeFi, payments, RWA, FX/perps, AI-agent
+infrastructure, NFT/gaming, privacy)** — recorded for awareness, not launchpads
+so not directly relevant to `KNOWN_LAUNCH_FACTORIES`, but worth remembering if
+ArcVet's scope ever grows past "token launch trust" (e.g. `@catena_labs` and
+`@nexorafi`'s agent-payment infrastructure directly overlaps with the x402
+angle discussed alongside ArcVet before Phase 1 was chosen; full list not
+reproduced here — ask if this needs expanding into its own section later).
+
+**Next step if picked up**: check `eth_getCode`/bytecode + first-launch tx for
+one token each from `@ArcadeSwap`, `@PUMP_archi`, and `@arcfunxyz` against
+BARC/sharc_attac's known factory-hop addresses
+(`0x0000ffffbe8efe702c8703ae3477ff5de3d319c0`,
+`0x6049c9a0e26405c0985f9e3685c87d0ae917f82b`,
+`0x8366a39cc670b4001a1121b8f6a443a643e40951` — `DECISIONS.md §12`) before
+assuming any match.
