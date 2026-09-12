@@ -176,7 +176,8 @@ they differ:
   owner, unverified, **`liquidityLock` not applicable** (still bonding-curve at the
   time checked — no V3/V4 pool-creation event in its mint tx) → **score = 75 (v1.0)
   / 77 (v1.1), confidence high** (`npx tsx scripts/check-token.ts`, live).
-- **Argus** (a TollyLabs token, chain 5042, 232h old): topEoaShare ≈ 0.030, a live
+- **Argus** (likely an Arguspad token, not Tolly — `LAUNCHPADS.md`'s 2026-09-12
+  correction; chain 5042, 232h old): topEoaShare ≈ 0.030, a live
   owner address, deployer launched 28 other tokens in the surrounding 7 days,
   **`liquidityLock` = locked** → **score = 69 (v1.0) / 74 (v1.1), confidence high**.
   `DECISIONS.md §10`.

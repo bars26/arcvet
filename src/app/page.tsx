@@ -7,8 +7,8 @@ import CommunityReports from "./CommunityReports";
 const EXPLORER = "https://arc-scan.org";
 const PRESETS = [
   { label: "WARP (warp)", address: "0x384c60f98ecd4c26345499345c03d677e40f115e" },
-  { label: "Argus (tolly)", address: "0xece5ca8bf9220718e5727754026757512212cb3c" },
-  { label: "ACAT (tolly)", address: "0xf80457274fa646c7a8e0942d48be703864ef3d01" },
+  { label: "Argus (arguspad)", address: "0xece5ca8bf9220718e5727754026757512212cb3c" },
+  { label: "ACAT (o1)", address: "0xf80457274fa646c7a8e0942d48be703864ef3d01" },
 ];
 
 type Confidence = "none" | "low" | "medium" | "high";

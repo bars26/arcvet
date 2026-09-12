@@ -79,13 +79,27 @@ be an empty EOA on *testnet* — the platform simply isn't there):
 
 ### tollylabs.com/tokens ("Tolly") — live, revenue-share angle, chain 5042
 "Launch a token on Arc, earn from every trade" — creators get a fee cut, not just a
-bonding curve. At least 14 real tokens live (Argus, ACAT, Tolly, Barc, "usdc is
-cool", WARP, O1NK, Cocoa Channel, Argos Bot, Architects, Potato, ARCASH, "sharc
-attac", Duke — addresses grabbed via the trade-chart links, e.g. Argus =
-`0xece5ca8bf9220718e5727754026757512212cb3c`). **Confirmed on chain 5042** (`eth_getCode`
-returned real bytecode — an EIP-1167 minimal-proxy clone — via that chain's RPC;
-the same address is an empty EOA on testnet). Factory/implementation address not
-yet resolved.
+bonding curve. **Confirmed on chain 5042** (`eth_getCode` returned real bytecode —
+an EIP-1167 minimal-proxy clone — for at least one token traded there).
+
+**Correction (2026-09-12, prompted by a user-shared X post):** the original version
+of this section listed 14 "Tolly tokens" (Argus, ACAT, Tolly, Barc, WARP, "sharc
+attac", ...) with addresses "grabbed via the trade-chart links" on
+tollylabs.com/tokens. **That was a methodology error, not just an unverified
+guess** — it's now directly disprovable: WARP is independently confirmed launched
+by circlewarp's own factory (this file's Warp section), and BARC is independently
+confirmed launched via Uniswap's own Liquidity Launcher, attributed by a separate
+source to a platform called "TradePools" (`DECISIONS.md §14`, `§18` below) — neither
+went anywhere near Tolly at launch. **Tolly is a trading terminal/aggregator that
+lists tokens from multiple launchpads, same as RadarDex** — appearing on its
+trade-chart page is not evidence a token launched there. Argus specifically: its
+own launch tx (`0x0a1bf781...`) calls `0x0f1c7cb26d6cd36bd4189e41947658b39437587a`,
+a *different* router from either Warp's or BARC's — consistent with a third,
+distinct launcher (a user-shared X post attributes Argus to **`@Arguspad`**
+specifically, not Tolly — plausible given the name, not independently re-verified
+beyond confirming it's neither Warp's nor BARC's launch path). Kept the platform
+entry since Tolly itself is real and live; the specific token attributions above
+were wrong and are retracted.
 
 ### arcpad.meme — live, small
 One visible token so far: "Archie Dolater" / `$ARCHIE`,
@@ -164,9 +178,12 @@ Uniswap V3/V4** launch model is a plausible match for that router shape):
   website. Likely either mistyped in the source post, renamed, or not yet public.
   Not resolved — dropped as a lead rather than guessed at further.
 - `@arcfunxyz` — bonding-curve, ~$25K graduation (vs. Warp's $69K). Not checked.
-- `@actfunxyz`, `@Arguspad` (note: a *different* project from "Argus" the
-  Tolly-launched token already in our reference set — same name, unrelated),
-  `@onmidotfun`, `@Fliptfun` — not investigated.
+- `@actfunxyz`, `@onmidotfun`, `@Fliptfun` — not investigated.
+- `@Arguspad` — **update, 2026-09-12**: originally noted here as "a different
+  project from Argus, same name, unrelated" — that was backwards. A second
+  user-shared X post attributes Argus (`0xece5ca8bf9220718e5727754026757512212cb3c`,
+  ArcVet's own reference token) directly to Arguspad. See the Tolly section
+  above for the correction and why the original Tolly attribution was wrong.
 
 **Other categories mentioned (DEX/DeFi, payments, RWA, FX/perps, AI-agent
 infrastructure, NFT/gaming, privacy)** — recorded for awareness, not launchpads
@@ -177,8 +194,9 @@ angle discussed alongside ArcVet before Phase 1 was chosen; full list not
 reproduced here — ask if this needs expanding into its own section later).
 
 **Resolved, and not a launchpad at all** (`DECISIONS.md §14`, verified against
-a third-party article's on-chain claims): `0x0000ffffbe8efe702c8703ae3477ff5de
-3d319c0` is **Uniswap's own official Liquidity Launcher** on Arc, and
+a third-party article's on-chain claims):
+`0x0000ffffbe8efe702c8703ae3477ff5de3d319c0` is **Uniswap's own official
+Liquidity Launcher** on Arc, and
 `0x8366a39cc670b4001a1121b8f6a443a643e40951` is **the Uniswap v4 PoolManager**
 itself — chain-wide, shared infrastructure, not a per-launchpad router. BARC
 and sharc_attac share those addresses because both were launched *directly*
@@ -186,5 +204,48 @@ through Uniswap's V4 tooling, not through a third-party-branded launchpad —
 explaining why no launchpad's own factory (ArcadeSwap, arcfunxyz, or anything
 else on this list) was ever going to match. `@arcfunxyz` is no longer worth
 checking for this specific question.
-(above) — this list is close to exhausted as a source of leads for that
-specific router pattern.
+
+## Second user-shared X post — ticker/CA list, unverified (2026-09-12)
+
+Public mainnet is 4 days out per this post; the user doesn't have funds bridged
+to Arc mainnet (missed the brief window it was open pre-launch — noted earlier
+this session) and is watching RadarDex activity pick up ahead of it. This list
+names specific tickers, contract addresses, and launchpad attributions — **not
+independently verified** beyond the two spot-checks below, which already found
+**two real corrections to this file** (see the Tolly section above): Argus and
+ACAT were wrongly attributed to Tolly (methodology error — they're tradeable
+on Tolly's terminal, which isn't the same as launched by Tolly). Given that,
+treat every other attribution below the same way — a lead, not a fact, until
+checked the same way.
+
+| Ticker | CA | Claimed platform | Note |
+|---|---|---|---|
+| TOLLY | `0xbc43ce8dec648ea298c4275559b81d6261c90b67` | TollyLabs | terminal + launchpad, buyback-and-burn fees |
+| ARGUS | `0xece5ca8bf9220718e5727754026757512212cb3c` | Arguspad | = ArcVet's own reference token; **re-attributed away from Tolly this session**, see above |
+| WARP | `0x384c60f98ecd4c26345499345c03d677e40f115e` | circlewarp | already fully confirmed, this file |
+| SHARCFUN | `0x99b37b7fccaa7a1030617b6195eb3045c523bb97` | SharcFun | **not the same token as "sharc attac"** (`0xbd88cf25a230f971adbf31efa30ed0d1bd3338be`, DECISIONS.md §11-17) — confusingly similar names, different addresses, don't conflate |
+| ARCASH | `0x0bffa97f774824e9da843699aedd2835cb1b8022` | THEARCASH / longdotxyz's "IndexFi of arc" | fee-share to holders |
+| LONG | `0x2164bb17a2d38c1b5170e987b2c0416df1efc752` | Longdotsupply | **= one of the addresses the user asked ArcVet to check earlier this session** (scored 61, low confidence, "deployer launched 12 other tokens" — that other-launches signal may literally be this same platform's own volume, not spam) |
+| BRC | `0x11c87c506acf3ea0799f8717127fe55a184f8efd` | BRC_Exchange (by Noxa_Fi) | claimed "one of the oldest" |
+| COOL ("usdc is cool") | `0xeb64987643db71c76b2a2be7e723decc995e5b37` | — | claimed reply from the real @USDC account |
+| ARCAT | `0x07704b06981ea962b87296362a1281484d160000` | — | claimed "first ever deployed token" on Arc |
+| ARCANINE | `0xf3715bf5c2de299f08b81180ffb739a8372a175f` | — | claimed "first ever *traded*" (distinct from first *deployed* = ARCAT) |
+| ARCHITECTS | `0x8bcb94279fc2c984ec34e0c1f2192df8c69ea4f0` | — | named for the "Architects" community; explicitly "not affiliated" |
+| STEVE | `0xa23632d6a32174ff4ee8e76aacf9f244e10cfd73` | — | named after Circle's own "Steve" AI agent; "not affiliated" |
+| BEANCAT | `0x41c8a71f630c636294009fa4fb0cc4c3bbe674fe` | — | named for a claimed old (2012) @arc profile picture |
+| ACAT | `0xf80457274fa646c7a8e0942d48be703864ef3d01` | o1_exchange | = ArcVet's own reference token; **re-attributed away from Tolly this session**, see above |
+| BARC | `0x4753c45fb550fecaa143a47968659117e6ffc2ce` | "TradePools" | = ArcVet's own reference token from §11-17; this is the first attribution we've seen for who's actually behind BARC's launch (previously only knew it went through Uniswap's own Liquidity Launcher, DECISIONS.md §14 — "TradePools" would be the branded product built on top of that, consistent with BARC and Argus using *different* entry routers even though both eventually touch the same Uniswap V3/V4 infra) |
+| ARCBAT | `0xbe0cad585ea2d13de2f4e36376be755c0afd8b97` | — | named for a Circle/USDC video reference |
+
+**Also mentioned, not addresses**: `chart.zone` (aggregator, claims 10+ launchpad
+coverage — a candidate alternative/supplement to RadarDex as a data source,
+not checked), and a claim that "fomo app" will support Arc "on day 1."
+
+**On the surrounding framing** (worth being direct about, matching this
+project's own "advisory, not a guarantee" stance rather than echoing the
+post's excitement): the post's own opening line doubts Robinhood-style hype
+but still argues KOLs/copytraders/theses will move these regardless of
+fundamentals — which is a real, honest dynamic to expect, but not a signal
+ArcVet can or should try to price in. Nothing here changes ArcVet's job: read
+what's on-chain, say what it does and doesn't show, and stay quiet about
+where price goes.
