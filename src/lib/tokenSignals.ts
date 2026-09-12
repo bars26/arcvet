@@ -13,6 +13,7 @@ import {
   isContractAddress,
   probeOwner,
   getTotalSupply,
+  getLiquidityLockStatus,
 } from "./arc";
 import type { TokenSignals } from "./score";
 
@@ -76,6 +77,7 @@ export async function getTokenSignals(tokenAddress: Address): Promise<TokenSigna
     totalSupply,
     { holder: topEoaHolder, available: holderDataAvailable },
     created,
+    liquidityLockStatus,
   ] = await Promise.all([
     getEarlyTransfers(tokenAddress, mintTimestamp + EARLY_WINDOW_SECONDS),
     isVerified(tokenAddress),
@@ -83,6 +85,7 @@ export async function getTokenSignals(tokenAddress: Address): Promise<TokenSigna
     getTotalSupply(tokenAddress),
     findTopEoaHolder(tokenAddress),
     getCreatedContracts(creation.contractCreator),
+    getLiquidityLockStatus(creation.txHash),
   ]);
 
   const creatorEarlyAcquired = earlyTransfers
@@ -108,5 +111,6 @@ export async function getTokenSignals(tokenAddress: Address): Promise<TokenSigna
     deployerPriorLaunches7d,
     verified,
     ownerProbe,
+    liquidityLockStatus,
   };
 }

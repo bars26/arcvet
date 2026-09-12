@@ -18,7 +18,8 @@ const result = scoreToken({
   deployerPriorLaunches7d: 1, // same deployer also made CATTY
   verified: false,
   ownerProbe: "no-admin",
+  liquidityLockStatus: "not-found", // lolpad's bonding curve predates the V3/V4 detection this checks
 });
 
 console.log(JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2));
-console.log(`\nexpected ~26 per SPEC.md §8 — got ${result.score}`);
+console.log(`\nexpected 28 per SPEC.md §8 (arcvet-v1.1 reweight — liquidityLock inapplicable, no V3/V4 pool for a lolpad launch) — got ${result.score}`);

@@ -864,3 +864,73 @@ the same idea, and doesn't depend on ever catching a pull in the act.
 Not yet built. Reported to the user for a direction call: build "is liquidity
 locked" (forward-looking, checkable from block zero) instead of "was it
 pulled" (reactive, and — on this evidence — may rarely if ever fire)?
+
+## 17. `liquidityLock` shipped — formula bumped to `arcvet-v1.1`
+
+User picked the forward-looking version from §16. Built and shipped same day.
+
+**`arc.ts` — `getLiquidityLockStatus(launchTxHash)`.** Reuses the launch tx
+already fetched by `getContractCreation` (now also returns `txHash`, not just
+creator/timestamp — a small but real breaking change to that type). Reads the
+tx's own receipt logs:
+
+1. V3 path: a `PoolCreated` event at the official `v3CoreFactoryAddress`
+   (`0xf0db7b58...`, confirmed against `@uniswap/sdk-core`, §15).
+2. V4 path: an `Initialize` event at the official `v4PoolManagerAddress`
+   (`0x8366a39c...`).
+3. Either way, find the LP-NFT mint (`Transfer` from the zero address) at the
+   matching position manager (`0x39654a85...` for V3, `0x6049c9a0...` for V4)
+   within the *same* transaction, and check whether the recipient is a
+   contract, the burn address, or a plain EOA.
+
+No hooks/tick-math needed at all — this only reads *who holds the NFT*, not
+the pool's liquidity depth (that was §15's separate concern).
+
+**Formula reweight** (`score.ts`, `FORMULA_VERSION` → `arcvet-v1.1`):
+`liquidityLock` added at weight 0.15, taken from `holderConcentration`
+(0.40→0.35), `creatorEarlyAccumulation` (0.25→0.20), and
+`deployerLaunchVelocity` (0.20→0.15) — `ownershipSurface`/`verification`
+untouched. `push()`'s `applicable` gate treats `"not-found"` exactly like
+`holderDataAvailable: false` — dropped and renormalised away, never scored as
+either safe or risky.
+
+**Bug found and fixed while validating** (same pattern as §11's
+`getTopHolders` bug — caught by testing against real, previously-cached data
+rather than only fresh fixtures): `getContractCreation`'s disk cache
+(`cache.ts`, `TTL.FOREVER`) had entries written *before* `txHash` was added to
+`ContractCreation`'s shape. Loading one of those stale entries silently gave
+`creation.txHash === undefined`, which crashed `getLiquidityLockStatus`'s own
+`cacheGet` call (`key.toLowerCase()` on `undefined`) — surfaced immediately on
+WARP, the very first live re-check. Fixed by clearing the local `.cache/`
+directory (gitignored, safe, self-repopulates). **Not a production risk** —
+Vercel's serverless filesystem doesn't persist `TTL.FOREVER` entries across
+deploys the way a long-running local dev server does — but a real reminder
+that a `TTL.FOREVER` cache is a schema commitment: adding a field to a cached
+type without a cache-version bump is a live footgun for any long-running
+instance, not just this one.
+
+**Validated against 10 real chain-5042 tokens** before shipping (mirroring
+every other term's validation discipline in this project):
+
+| Token | `liquidityLockStatus` | Notes |
+|---|---|---|
+| WARP | not-found | still bonding-curve at check time — no V3/V4 pool-creation event in its mint tx |
+| Argus | locked | |
+| BARC | locked | matches §15-16's direct liquidity check exactly |
+| sharc_attac | locked | |
+| VORT | locked | |
+| 5 more user-supplied addresses | 2 not-found, 3 locked | |
+
+**Known limitation, stated plainly rather than glossed over**: across all 10
+real tokens checked, **not one came back `"unlocked"`.** The `applicable`/
+`"not-found"` and `value=1`/`"locked"` branches are now well-validated against
+ground truth; the `value=0`/`"unlocked"` branch is implemented and type-safe
+but has no real positive example yet — consistent with §16's finding that
+Arc's dominant launch tooling locks LP by default, but it does mean this term
+hasn't been seen to actually fire "risky" on real data. Worth revisiting if an
+unlocked launch ever turns up.
+
+Shipped: `SPEC.md` (weight table, term formula, `TokenSignals` contract, §8
+reference values recomputed for both formula versions, §9 versioning entry),
+`scripts/fixture-rabbit.ts` (expected score 27→28), all committed together.
+`tsc`+`eslint` clean.

@@ -1,13 +1,15 @@
 /**
- * ArcVet scoring engine — pure, deterministic. Frozen formula `arcvet-v1.0`,
+ * ArcVet scoring engine — pure, deterministic. Frozen formula `arcvet-v1.1`,
  * see SPEC.md. Every weight/cap here was checked against real Arc launches
- * (lolpad.fun) before being set — see DECISIONS.md §3-4.
+ * (lolpad.fun) before being set — see DECISIONS.md §3-4; `liquidityLock`
+ * (v1.1) was added after checking real V3/V4 launches on chain 5042 — see
+ * DECISIONS.md §15-17.
  *
  * This module does no I/O. The read layer (not yet written) is responsible for
  * turning on-chain data into a `TokenSignals` object.
  */
 
-export const FORMULA_VERSION = "arcvet-v1.0";
+export const FORMULA_VERSION = "arcvet-v1.1";
 
 export type OwnerProbeResult = "no-admin" | "renounced" | "live-owner";
 
@@ -41,6 +43,15 @@ export type TokenSignals = {
   /** arcscan getsourcecode has a non-empty SourceCode */
   verified: boolean;
   ownerProbe: OwnerProbeResult;
+  /**
+   * Is this token's DEX liquidity position held by a contract (a locker, or a
+   * per-launch vault) or burned outright — vs. sitting in a plain wallet that
+   * could withdraw it at any time? `"not-found"` means no recognised pool-
+   * creation event turned up in the token's launch tx (still on a bonding
+   * curve, or an unrecognised launch pattern) — dropped, not scored as risky.
+   * DECISIONS.md §15-17.
+   */
+  liquidityLockStatus: "locked" | "unlocked" | "not-found";
 };
 
 export type Confidence = "none" | "low" | "medium" | "high";
@@ -63,9 +74,10 @@ export type ScoreResult = {
 };
 
 const WEIGHTS = {
-  holderConcentration: 0.4,
-  creatorEarlyAccumulation: 0.25,
-  deployerLaunchVelocity: 0.2,
+  holderConcentration: 0.35,
+  creatorEarlyAccumulation: 0.2,
+  deployerLaunchVelocity: 0.15,
+  liquidityLock: 0.15,
   ownershipSurface: 0.1,
   verification: 0.05,
 } as const;
@@ -132,6 +144,19 @@ export function scoreToken(s: TokenSignals): ScoreResult {
         ? "First launch from this deployer in the last 7 days"
         : `Deployer launched ${s.deployerPriorLaunches7d} other token(s) in the 7 days around this one`;
     push("deployerLaunchVelocity", WEIGHTS.deployerLaunchVelocity, true, value, reason);
+  }
+
+  // liquidityLock
+  {
+    const applicable = s.liquidityLockStatus !== "not-found";
+    const value = s.liquidityLockStatus === "locked" ? 1 : 0;
+    const reason =
+      s.liquidityLockStatus === "locked"
+        ? "LP position is held by a contract or burned — not withdrawable by a single keyholder"
+        : s.liquidityLockStatus === "unlocked"
+          ? "LP position is held by a plain wallet — could be withdrawn at any time"
+          : "No DEX pool found yet for this token (still on a bonding curve, or an unrecognised launch pattern)";
+    push("liquidityLock", WEIGHTS.liquidityLock, applicable, value, reason);
   }
 
   // ownershipSurface

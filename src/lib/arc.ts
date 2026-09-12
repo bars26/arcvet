@@ -34,7 +34,7 @@
  * A descriptive User-Agent is required — arc-scan.org's edge 403s several default
  * HTTP-client user agents before a request reaches the service.
  */
-import { createPublicClient, defineChain, http, parseAbiItem, type Address } from "viem";
+import { createPublicClient, decodeEventLog, defineChain, http, parseAbiItem, type Address, type Log } from "viem";
 import { cacheGet, cacheSet, TTL } from "./cache";
 
 export const ARC_CHAIN_ID = 5042;
@@ -82,6 +82,7 @@ export type ContractCreation = {
   contractCreator: Address;
   blockNumber: number;
   timestamp: number; // unix seconds — also the mint time for a fresh token
+  txHash: `0x${string}`;
 };
 
 /**
@@ -112,6 +113,7 @@ export async function getContractCreation(address: Address): Promise<ContractCre
     contractCreator: tx.from.address as Address,
     blockNumber: tx.block.height,
     timestamp: tx.block.timestamp,
+    txHash: facts.first.hash as `0x${string}`,
   };
   cacheSet("contract-creation", address, value, TTL.FOREVER);
   return value;
@@ -323,3 +325,93 @@ export async function getTotalSupply(address: Address): Promise<bigint> {
 // kept for a future Warp-specific TokenCreated-log-based launch-velocity path —
 // see LAUNCHPADS.md's "strictly better once wired up" note).
 export const TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
+
+// --- liquidity lock --------------------------------------------------------------------
+
+/**
+ * Official Uniswap Labs deployment addresses on Arc chain 5042, confirmed against
+ * `@uniswap/sdk-core`'s own `ARC_ADDRESSES` block (DECISIONS.md §15) — not guessed
+ * or scraped from a launchpad's own page.
+ */
+const V3_FACTORY: Address = "0xf0db7b58379503491d857db50ac9ece64c653918";
+const V3_POSITION_MANAGER: Address = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377";
+const V4_POOL_MANAGER: Address = "0x8366a39cc670b4001a1121b8f6a443a643e40951";
+const V4_POSITION_MANAGER: Address = "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b";
+const BURN_ADDRESS: Address = "0x000000000000000000000000000000000000dead";
+
+const POOL_CREATED_EVENT = parseAbiItem(
+  "event PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)",
+);
+const V4_INITIALIZE_EVENT = parseAbiItem(
+  "event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)",
+);
+const NFT_TRANSFER_EVENT = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+);
+
+export type LiquidityLockStatus = "locked" | "unlocked" | "not-found";
+
+/**
+ * Is this token's DEX liquidity position locked away (held by a contract, or
+ * burned outright) or sitting in a plain wallet that could withdraw it at any
+ * time? DECISIONS.md §16: every real launch checked so far mints the LP
+ * position (an NFT, both for Uniswap V3 and V4) directly to a contract, never
+ * to the deployer's own wallet — this checks that directly instead of trusting
+ * a launchpad's own "LP Locked Forever" badge (SPEC.md §8 — RABBIT had one).
+ *
+ * Reads the token's own launch transaction's logs (already fetched once via
+ * `getContractCreation`, reused here — no extra lookup to find *which* tx to
+ * check) for a V3 `PoolCreated` or V4 `Initialize` event at Uniswap's known,
+ * official Arc addresses, then finds the LP-NFT mint (`Transfer` from the zero
+ * address) at the matching position manager within that same transaction.
+ *
+ * `"not-found"` means no recognised pool-creation event turned up in the
+ * launch tx — a bonding-curve token still on its curve (no DEX pool exists
+ * yet), or a launch pattern this doesn't recognise. Not the same as
+ * `"unlocked"`: this term is dropped, not scored as risky, exactly like
+ * `holderConcentration`'s `holderDataAvailable` case.
+ *
+ * Known limitation: only looks *within the launch transaction itself*. A pool
+ * created now but seeded with liquidity in a later, separate transaction would
+ * also read as `"not-found"` — true of every real launch checked so far
+ * (pool-create + first-liquidity-add + first-swap all happen atomically in one
+ * tx), but not a guarantee for every possible launch pattern.
+ */
+function decodesAs(abiItem: typeof POOL_CREATED_EVENT | typeof V4_INITIALIZE_EVENT | typeof NFT_TRANSFER_EVENT, log: Log): boolean {
+  try {
+    decodeEventLog({ abi: [abiItem], data: log.data, topics: log.topics });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getLiquidityLockStatus(launchTxHash: `0x${string}`): Promise<LiquidityLockStatus> {
+  const cached = cacheGet<LiquidityLockStatus>("liquidity-lock", launchTxHash);
+  if (cached !== undefined) return cached;
+
+  const receipt = await publicClient.getTransactionReceipt({ hash: launchTxHash });
+
+  const isV3Launch = receipt.logs.some((l) => eqAddr(l.address, V3_FACTORY) && decodesAs(POOL_CREATED_EVENT, l));
+  const isV4Launch = receipt.logs.some((l) => eqAddr(l.address, V4_POOL_MANAGER) && decodesAs(V4_INITIALIZE_EVENT, l));
+  const positionManager = isV3Launch ? V3_POSITION_MANAGER : isV4Launch ? V4_POSITION_MANAGER : null;
+
+  if (!positionManager) {
+    cacheSet("liquidity-lock", launchTxHash, "not-found", TTL.FOREVER);
+    return "not-found";
+  }
+
+  for (const log of receipt.logs) {
+    if (!eqAddr(log.address, positionManager) || !decodesAs(NFT_TRANSFER_EVENT, log)) continue;
+    const decoded = decodeEventLog({ abi: [NFT_TRANSFER_EVENT], data: log.data, topics: log.topics });
+    if (decoded.args.from !== ZERO_ADDRESS) continue;
+    const holder = decoded.args.to;
+    const locked = eqAddr(holder, ZERO_ADDRESS) || eqAddr(holder, BURN_ADDRESS) || (await isContractAddress(holder));
+    const status: LiquidityLockStatus = locked ? "locked" : "unlocked";
+    cacheSet("liquidity-lock", launchTxHash, status, TTL.FOREVER);
+    return status;
+  }
+
+  cacheSet("liquidity-lock", launchTxHash, "not-found", TTL.FOREVER);
+  return "not-found";
+}
