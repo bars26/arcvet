@@ -11,6 +11,9 @@ build/
 .env.local
 .env*.local
 
+# local disk cache (see src/lib/cache.ts)
+.cache/
+
 # misc
 .DS_Store
 *.log

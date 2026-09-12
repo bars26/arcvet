@@ -2,18 +2,22 @@
  * Arc Testnet chain config + low-level read primitives for ArcVet.
  *
  * Every primitive here was chosen because it was actually confirmed working against
- * live Arc Testnet data in DECISIONS.md §3-4 — nothing here is assumed:
- * - the raw RPC prunes historical logs, so log history goes through arcscan's API
- *   (same finding ProofGraph made independently);
- * - arcscan's topic-AND log filter (`topic1=<zero>`) silently returns nothing even
- *   when a matching event demonstrably exists, so we always pull *all* Transfer
- *   logs for a token and filter/reconstruct client-side, never server-side by topic;
+ * live Arc Testnet data in DECISIONS.md §3-4-6 — nothing here is assumed:
+ * - Transfer-log history is read from the **raw RPC**, chunked (see
+ *   `getAllTransfers`) — not from arcscan. ProofGraph's "the public RPC prunes
+ *   history" finding turned out not to hold here for chunked queries: the RPC caps
+ *   response *size* and request *rate* per call, not log retention (DECISIONS.md §6).
+ * - `getcontractcreation` (who deployed it + when) and the deployer's created-
+ *   contracts list have no RPC equivalent — those still go through arcscan.
  * - `tokenholderlist` / `tokeninfo` are unsupported ("Unknown action") on this
- *   Blockscout instance — holder balances are reconstructed from raw transfers;
- * - the public arcscan API rate-limits under bursty use ("Too many requests") —
- *   every paginated call here is throttled and retried, not fired in a tight loop.
+ *   Blockscout instance — holder balances are reconstructed from raw transfers.
+ * - the anonymous arcscan API rate-limits hard: **10 requests per ~21h window**,
+ *   confirmed via response headers (DECISIONS.md §5) — every arcscan call here is
+ *   cached to disk (`./cache.ts`) before anything else, and throttled/retried on
+ *   top of that, not fired freely.
  */
 import { createPublicClient, defineChain, http, parseAbiItem, type Address } from "viem";
+import { cacheGet, cacheSet, TTL } from "./cache";
 
 export const ARC_TESTNET_RPC = "https://rpc.testnet.arc.network";
 export const ARC_TESTNET_CHAIN_ID = 5042002;
@@ -67,20 +71,29 @@ export type ContractCreation = {
   blockNumber: number;
 };
 
-/** Who deployed this contract, and when. Confirmed working — DECISIONS.md §3 item 1. */
+/**
+ * Who deployed this contract, and when. Confirmed working — DECISIONS.md §3 item 1.
+ * Cached forever: a contract's creator and creation block never change.
+ */
 export async function getContractCreation(address: Address): Promise<ContractCreation | null> {
+  const cached = cacheGet<ContractCreation | null>("contract-creation", address);
+  if (cached !== undefined) return cached;
+
   const result = await arcscan<Array<{ contractAddress: string; contractCreator: string; blockNumber: string }>>({
     module: "contract",
     action: "getcontractcreation",
     contractaddresses: address,
   });
   const row = result?.[0];
-  if (!row?.contractCreator) return null;
-  return {
-    contractAddress: row.contractAddress as Address,
-    contractCreator: row.contractCreator as Address,
-    blockNumber: Number(row.blockNumber),
-  };
+  const value = row?.contractCreator
+    ? {
+        contractAddress: row.contractAddress as Address,
+        contractCreator: row.contractCreator as Address,
+        blockNumber: Number(row.blockNumber),
+      }
+    : null;
+  cacheSet("contract-creation", address, value, TTL.FOREVER);
+  return value;
 }
 
 // --- transfer log history --------------------------------------------------------------
@@ -115,6 +128,19 @@ const MIN_CHUNK_BLOCKS = 50n;
 const RPC_GAP_MS = 150;
 
 export async function getAllTransfers(tokenAddress: Address, sinceBlock = 0n): Promise<TransferEvent[]> {
+  // Not an arcscan budget concern (this reads the RPC), but a fresh-vs-old token can
+  // take seconds-to-minutes to scan — a short cache saves a lot of dev-loop waiting
+  // and repeat-visitor latency without going stale for long.
+  const cacheKey = `${tokenAddress}:${sinceBlock}`;
+  const cached = cacheGet<TransferEvent[]>("transfers", cacheKey);
+  if (cached !== undefined) return cached;
+
+  const fetched = await fetchAllTransfers(tokenAddress, sinceBlock);
+  cacheSet("transfers", cacheKey, fetched, TTL.TEN_MIN);
+  return fetched;
+}
+
+async function fetchAllTransfers(tokenAddress: Address, sinceBlock: bigint): Promise<TransferEvent[]> {
   const head = await publicClient.getBlockNumber();
   const out: TransferEvent[] = [];
   let from = sinceBlock;
@@ -172,6 +198,9 @@ export type CreatedContract = { contractAddress: Address; timestamp: number };
  * feeds (7 days), not a full-lifetime archive for a very active address.
  */
 export async function getCreatedContracts(deployer: Address): Promise<CreatedContract[]> {
+  const cached = cacheGet<CreatedContract[]>("created-contracts", deployer);
+  if (cached !== undefined) return cached;
+
   const out: CreatedContract[] = [];
   for (let page = 1; page <= 3; page++) {
     const rows = await arcscan<
@@ -192,20 +221,33 @@ export async function getCreatedContracts(deployer: Address): Promise<CreatedCon
     }
     if (rows.length < 100) break;
   }
+  // moderate TTL: this list can only grow (a deployer might launch again), and it
+  // feeds a 7-day rolling window, so an hour of staleness is an acceptable trade
+  // against arcscan's ~21h lockout on a fresh miss.
+  cacheSet("created-contracts", deployer, out, TTL.HOUR);
   return out;
 }
 
 // --- verification + generic selector probing -------------------------------------------
 
-/** Is the contract's source verified on arcscan? DECISIONS.md §3 item 4 — a real,
- * checkable, non-uniform signal (not "testnet = never verified"). */
+/**
+ * Is the contract's source verified on arcscan? DECISIONS.md §3 item 4 — a real,
+ * checkable, non-uniform signal (not "testnet = never verified"). Cached
+ * asymmetrically: once verified, that never reverts, so cache it forever; an
+ * unverified result gets a shorter TTL since someone could verify it later.
+ */
 export async function isVerified(address: Address): Promise<boolean> {
+  const cached = cacheGet<boolean>("verified", address);
+  if (cached !== undefined) return cached;
+
   const result = await arcscan<Array<{ SourceCode?: string }>>({
     module: "contract",
     action: "getsourcecode",
     address,
   });
-  return Boolean(result?.[0]?.SourceCode && result[0].SourceCode.length > 0);
+  const verified = Boolean(result?.[0]?.SourceCode && result[0].SourceCode.length > 0);
+  cacheSet("verified", address, verified, verified ? TTL.FOREVER : TTL.HOUR);
+  return verified;
 }
 
 /** True if `address` has bytecode (a contract), false if it's a plain EOA. */
