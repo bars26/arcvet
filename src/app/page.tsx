@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import type { Address } from "viem";
+import CommunityReports from "./CommunityReports";
 
 const EXPLORER = "https://arc-scan.org";
 const PRESETS = [
@@ -235,6 +237,8 @@ function ResultPanel({ data }: { data: CheckResult }) {
           <Field label="deployer launches (7d)" value={data.deployerPriorLaunches7d} />
         </dl>
       </div>
+
+      <CommunityReports key={data.address} subject={data.address as Address} />
     </div>
   );
 }

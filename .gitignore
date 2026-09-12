@@ -14,6 +14,10 @@ build/
 # local disk cache (see src/lib/cache.ts)
 .cache/
 
+# local community-report store (see src/lib/reportStore.ts) - real data, not
+# committed; needs a real DB before real traffic (same caveat as .cache/)
+.data/
+
 # misc
 .DS_Store
 *.log

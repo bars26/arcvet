@@ -9,14 +9,14 @@ liquidity status) directly from Arc, and returns an explainable 0–100 score wi
 `reasons[]` breakdown — the same "advisory, not a guarantee" philosophy as
 [ProofGraph](https://github.com/bars26/proofgraph), applied to "should I ape into this."
 
-Phase 1 (this repo, MVP): fully automatic, on-chain only. No registry, no manual
-evidence submission — works from block zero for any address. A community-evidence
-layer (ProofGraph-style: outcome + verifier + hash) is a candidate Phase 2, once the
-automatic signal is proven useful.
+Phase 1: fully automatic, on-chain only. No registry, no manual evidence submission
+— works from block zero for any address. Phase 2 adds an optional, wallet-signed
+community-report layer on top — **advisory only, never blended into the score**
+(`PHASE2.md`).
 
 See `DECISIONS.md` for scope, open questions, and Day-1 findings; `SPEC.md` for the
-frozen scoring formula; `LAUNCHPADS.md` for recon on Arc's live launchpads (which
-ones are real, which factory patterns they use) ahead of widening Phase 2.
+frozen scoring formula; `LAUNCHPADS.md` for recon on Arc's live launchpads; `PHASE2.md`
+for the community-evidence layer's design and why it stays separate from the score.
 
 ## Development
 
