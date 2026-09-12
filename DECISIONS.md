@@ -802,3 +802,65 @@ given `ScoreResult.penalty` is already reserved for exactly this kind of
 severe, non-gradual risk — a pool that goes from full liquidity to near-zero
 between launch and now is categorically worse than "20% held by one wallet"),
 but scoped honestly: catches rug-pulls, not price risk in general.
+
+## 16. Went looking for a real liquidity-pull — didn't find one, found why instead
+
+Directly following §15, tried to find at least one token whose liquidity
+actually *was* pulled, to positive-control the new detection method (§15 only
+had negative controls — 3 tokens confirmed NOT rugged this way). Checked
+RadarDex's live leaderboard for the single worst 24h-adjacent decliner beyond
+the original 3 (`0xa1d26e8daede0f5c1c21ec14cfb92d8af7fbc52b` — coincidentally
+one of the addresses the user pasted earlier this session, scored 95/high —
+now showing −58.26% and only $4.1K of RadarDex-displayed liquidity, the
+lowest dollar figure of any candidate checked).
+
+**Still 100% intact** (2,280,298,132,493,471,030 raw liquidity units, launch
+and now, byte-for-byte identical — same method as §15). The low dollar figure
+RadarDex shows is a **price effect, not a withdrawal**: a V3 position's
+dollar-denominated value moves with the underlying pair's price even when the
+raw liquidity (`L`) never changes, because a fixed `L` holds a shifting mix of
+the two assets as price moves along the curve. This matters as its own
+lesson: **RadarDex's displayed "liquidity" figure cannot be used as evidence
+of a pull, only the raw on-chain `L` value can.**
+
+**The more interesting find was in the launch tx itself.** For every token
+checked so far, the LP position (an NFT, standard for both V3's
+`NonfungiblePositionManager` and V4's own position manager) is minted
+**directly to a contract, never to the deployer's own wallet**:
+
+- `0xa1d26e8d...`'s LP NFT → `0x09bcBc95c8387949e35199464b2a6a4fc2411C2e`, a
+  contract **deployed once at block 10,286,438** (long before this token's
+  block 13,647,739 launch) — reused across launches, i.e. a shared locker.
+- VORT's LP NFT → the same shared locker pattern (not individually re-checked
+  by address, but same platform, same mechanism).
+- BARC's LP NFT → `0xfe7Be4EbBE6CcDfA57EE8c36fe9a767B033eB056`, a **contract
+  with no `creation` record** (deployed inline, within the same atomic
+  multicall as the launch itself) — a fresh per-token vault, not shared, but
+  still a contract, never the deployer's wallet.
+
+This lines up exactly with what `LAUNCHPADS.md` already recorded secondhand
+("Tolly... earn from every trade," arcpad.meme's "permanently locked LP") —
+now confirmed directly on-chain rather than taken on a platform's own claim.
+
+**Reframing the signal.** Finding zero pulled-liquidity examples across every
+real candidate checked isn't proof none exist on Arc, but it's a strong
+signal that **Arc's dominant launch tooling (both the V3-locker pattern and
+Uniswap's own V4 Liquidity Launcher) locks the LP position into a contract
+at launch time by construction** — the classic "dev drains the pool" rug may
+simply be mechanically hard to pull off through these paths, which is exactly
+why a reactive "was it pulled" check keeps coming back "no" no matter what
+gets tested.
+
+That reframes what's actually worth building: not "did the pool drain"
+(reactive, and evidently rare-to-never on this data), but **"is this token's
+LP position held by a contract or by an EOA"** — checkable at any token's age,
+including brand new ones, before anything could happen either way. This is
+the same claim RABBIT's own launchpad UI advertised as a badge
+("Graduated, LP Locked Forever" — `SPEC.md §8`, ArcVet's very first reference
+case) — turning a platform's self-reported badge into an automatic,
+verifiable on-chain check is a materially stronger, more honest version of
+the same idea, and doesn't depend on ever catching a pull in the act.
+
+Not yet built. Reported to the user for a direction call: build "is liquidity
+locked" (forward-looking, checkable from block zero) instead of "was it
+pulled" (reactive, and — on this evidence — may rarely if ever fire)?
